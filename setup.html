@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración Inicial - Natillera</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .setup-container {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 40px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .setup-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .setup-header h1 {
+            color: var(--color-primary);
+            margin-bottom: 10px;
+        }
+
+        .setup-steps {
+            margin: 30px 0;
+        }
+
+        .step {
+            padding: 15px;
+            margin: 15px 0;
+            background: var(--color-bg);
+            border-radius: 4px;
+            border-left: 4px solid var(--color-primary);
+        }
+
+        .step h3 {
+            margin: 0 0 10px 0;
+            color: var(--color-primary);
+        }
+
+        .step p {
+            margin: 5px 0;
+            color: var(--color-text-secondary);
+        }
+
+        .step code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        .btn-setup {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .status-message {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.loading {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-left: 4px solid #1976d2;
+        }
+
+        .status-message.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #2e7d32;
+        }
+
+        .status-message.error {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #c62828;
+        }
+
+        .details {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .details ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+
+        .credentials {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .credentials h4 {
+            margin: 0 0 10px 0;
+            color: #856404;
+        }
+
+        .credentials p {
+            margin: 5px 0;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="setup-container">
+        <div class="setup-header">
+            <h1>🚀 Configuración Inicial</h1>
+            <p>Bienvenido al Sistema de Natillera</p>
+        </div>
+
+        <div class="setup-steps">
+            <div class="step">
+                <h3>📋 Paso 1: Verificar Google Sheet</h3>
+                <p>Asegúrate de haber creado un Google Sheet y copiado su ID en el archivo <code>backend/Code.gs</code>
+                </p>
+            </div>
+
+            <div class="step">
+                <h3>🔧 Paso 2: Implementar Apps Script</h3>
+                <p>Debes haber implementado el código de Apps Script como "Aplicación web"</p>
+            </div>
+
+            <div class="step">
+                <h3>🔗 Paso 3: Configurar URL</h3>
+                <p>La URL de la API ya está configurada en el frontend</p>
+            </div>
+
+            <div class="step">
+                <h3>✨ Paso 4: Inicializar Base de Datos</h3>
+                <p>Haz clic en el botón de abajo para crear todas las tablas y el usuario administrador</p>
+            </div>
+        </div>
+
+        <button id="btnInicializar" class="btn btn-primary btn-setup">
+            Inicializar Base de Datos
+        </button>
+
+        <div id="statusMessage" class="status-message"></div>
+
+        <div id="credentials" class="credentials" style="display: none;">
+            <h4>🔐 Credenciales de Acceso</h4>
+            <p><strong>Email:</strong> admin@natillera.com</p>
+            <p><strong>Contraseña:</strong> admin123</p>
+            <p style="margin-top: 10px; font-size: 14px; color: #856404;">
+                ⚠️ Guarda estas credenciales. Las necesitarás para iniciar sesión.
+            </p>
+        </div>
+
+        <button id="btnIrLogin" class="btn btn-success btn-setup" style="display: none;">
+            Ir al Login →
+        </button>
+
+        <div id="resetSection" style="margin-top: 40px; padding-top: 20px; border-top: 1px dashed #ccc; display: none;">
+            <p style="color: #c62828; font-size: 14px; text-align: center; margin-bottom: 15px;">
+                <strong>Zona de Peligro:</strong> Esta acción borrará todos los aportes, participantes, préstamos y
+                sorteos. No se puede deshacer.
+            </p>
+            <button id="btnReset" class="btn btn-danger btn-setup">
+                🔥 Resetear Base de Datos (Borrar Todo)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Configuración de la API
+        const API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
+
+        const btnInicializar = document.getElementById('btnInicializar');
+        const btnIrLogin = document.getElementById('btnIrLogin');
+        const statusMessage = document.getElementById('statusMessage');
+        const credentials = document.getElementById('credentials');
+
+        const btnReset = document.getElementById('btnReset');
+        const resetSection = document.getElementById('resetSection');
+
+        /**
+         * Muestra un mensaje de estado
+         */
+        function showMessage(type, message, details = null) {
+            statusMessage.className = `status-message show ${type}`;
+
+            let html = `<strong>${message}</strong>`;
+
+            if (details && details.length > 0) {
+                html += '<div class="details"><ul>';
+                details.forEach(detail => {
+                    html += `<li>${detail}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            statusMessage.innerHTML = html;
+        }
+
+        /**
+         * Inicializa la base de datos
+         */
+        async function inicializarBaseDatos() {
+            btnInicializar.disabled = true;
+            btnInicializar.textContent = 'Inicializando...';
+
+            showMessage('loading', 'Creando tablas y configurando la base de datos...');
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify({
+                        action: 'inicializarBaseDatos'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showMessage('success', '✅ Base de datos inicializada correctamente', result.detalles);
+
+                    // Mostrar credenciales
+                    credentials.style.display = 'block';
+
+                    // Mostrar botón para ir al login
+                    btnIrLogin.style.display = 'block';
+
+                    // Ocultar botón de inicializar
+                    btnInicializar.style.display = 'none';
+
+                    // Mostrar sección de reset
+                    resetSection.style.display = 'block';
+
+                } else {
+                    showMessage('error', '❌ Error al inicializar: ' + result.message);
+                    btnInicializar.disabled = false;
+                    btnInicializar.textContent = 'Reintentar Inicialización';
+                }
+
+            } catch (error) {
+                showMessage('error', '❌ Error de conexión: ' + error.message);
+                btnInicializar.disabled = false;
+                btnInicializar.textContent = 'Reintentar Inicialización';
+
+                console.error('Error completo:', error);
+            }
+        }
+
+        /**
+         * Resetea la base de datos
+         */
+        async function resetBaseDatos() {
+            if (!confirm('⚠️ ¿ESTÁS COMPLETAMENTE SEGURO?\n\nEsta acción borrará TODOS los datos de todas las hojas (participantes, aportes, préstamos, etc).\n\nLos encabezados se mantendrán, pero la información se perderá para siempre.')) {
+                return;
+            }
+
+            if (!confirm('CONFIRMACIÓN FINAL:\n\n¿Presionar OK para BORRAR TODO definitivamente?')) {
+                return;
+            }
+
+            btnReset.disabled = true;
+            btnReset.textContent = 'Reseteando...';
+            showMessage('loading', 'Borrando todos los datos del Spreadsheet...');
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify({
+                        action: 'resetBaseDatos'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showMessage('success', '🔥 Base de datos reseteada con éxito', result.detalles);
+
+                    // Ocultar credenciales y login si se desea forzar re-inicialización
+                    // Aunque los encabezados ya existen, quizá quiera volver a ver el proceso
+                    btnIrLogin.style.display = 'block'; // Sigue pudiendo ir al login
+                } else {
+                    showMessage('error', '❌ Error al resetear: ' + result.message);
+                }
+            } catch (error) {
+                showMessage('error', '❌ Error de conexión al resetear: ' + error.message);
+            } finally {
+                btnReset.disabled = false;
+                btnReset.textContent = '🔥 Resetear Base de Datos (Borrar Todo)';
+            }
+        }
+
+        // Event listeners
+        btnInicializar.addEventListener('click', inicializarBaseDatos);
+        btnReset.addEventListener('click', resetBaseDatos);
+
+        btnIrLogin.addEventListener('click', function () {
+            window.location.href = 'login.html';
+        });
+
+        // Verificar si ya está inicializado
+        window.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const response = await fetch(`${API_URL}?action=getResumen`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showMessage('success', '✅ La base de datos ya está inicializada');
+                    credentials.style.display = 'block';
+                    btnIrLogin.style.display = 'block';
+                    btnInicializar.style.display = 'none';
+                    resetSection.style.display = 'block';
+                }
+            } catch (error) {
+                // Si hay error, significa que no está inicializada
+                console.log('Base de datos no inicializada aún');
+            }
+        });
+    </script>
+</body>
+
+</html>

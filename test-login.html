@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Simple de Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        .test-box {
+            border: 2px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .success {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+
+        .error {
+            background: #ffebee;
+            border-color: #f44336;
+        }
+
+        .info {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #1976d2;
+        }
+
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔍 Test Simple de Login</h1>
+
+    <div class="test-box info">
+        <h3>Credenciales a probar:</h3>
+        <p><strong>Email:</strong> admin@natillera.com</p>
+        <p><strong>Password:</strong> admin123</p>
+        <p><strong>API URL:</strong>
+            https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec
+        </p>
+        <p><strong>Versión:</strong> v3 (Nueva implementación)</p>
+    </div>
+
+    <button onclick="testLogin()">🚀 PROBAR LOGIN AHORA</button>
+
+    <div id="result"></div>
+
+    <script>
+        async function testLogin() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="test-box info"><h3>⏳ Probando...</h3></div>';
+
+            const API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
+
+            try {
+                console.log('Enviando petición a:', API_URL);
+
+                const requestBody = {
+                    action: 'login',
+                    email: 'admin@natillera.com',
+                    password: 'admin123'
+                };
+
+                console.log('Datos enviados:', requestBody);
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                console.log('Respuesta recibida:', response);
+                console.log('Status:', response.status);
+                console.log('Status Text:', response.statusText);
+
+                const data = await response.json();
+                console.log('Datos parseados:', data);
+
+                if (data.status === 'success') {
+                    resultDiv.innerHTML = `
+                        <div class="test-box success">
+                            <h3>✅ ¡LOGIN EXITOSO!</h3>
+                            <p><strong>Mensaje:</strong> ${data.message}</p>
+                            <p><strong>Usuario:</strong> ${data.user.nombre}</p>
+                            <p><strong>Email:</strong> ${data.user.email}</p>
+                            <p><strong>Rol:</strong> ${data.user.rol}</p>
+                            <h4>Respuesta completa:</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="test-box error">
+                            <h3>❌ LOGIN FALLIDO</h3>
+                            <p><strong>Mensaje:</strong> ${data.message}</p>
+                            <h4>Respuesta completa:</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                console.error('Error completo:', error);
+                resultDiv.innerHTML = `
+                    <div class="test-box error">
+                        <h3>❌ ERROR DE CONEXIÓN</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <h4>Posibles causas:</h4>
+                        <ul>
+                            <li>La URL de la API es incorrecta</li>
+                            <li>El Apps Script no está implementado como "Aplicación web"</li>
+                            <li>El acceso no está configurado como "Cualquier usuario"</li>
+                            <li>Problema de CORS</li>
+                        </ul>
+                        <h4>Solución:</h4>
+                        <ol>
+                            <li>Ve a Google Apps Script</li>
+                            <li>Implementar → Gestionar implementaciones</li>
+                            <li>Editar la implementación</li>
+                            <li>Asegúrate que "Quién tiene acceso" = "Cualquier usuario"</li>
+                            <li>Crea una "Nueva versión"</li>
+                            <li>Implementar</li>
+                        </ol>
+                    </div>
+                `;
+            }
+        }
+
+        // Instrucciones
+        window.addEventListener('DOMContentLoaded', function () {
+            console.log('Página cargada. Presiona F12 para ver la consola.');
+            console.log('Haz clic en el botón "PROBAR LOGIN" para iniciar el test.');
+        });
+    </script>
+</body>
+
+</html>

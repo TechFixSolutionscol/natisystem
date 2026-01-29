@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Natillera</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-small">
+                    <img src="assets/images/Logo2.png" alt="Logo Natillera" width="120" height="120">
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-link active" data-section="dashboard">
+                    <span class="icon">📊</span>
+                    <span class="text">Dashboard</span>
+                </a>
+                <a href="#participantes" class="nav-link" data-section="participantes">
+                    <span class="icon">👥</span>
+                    <span class="text">Participantes</span>
+                </a>
+                <a href="#aportes" class="nav-link" data-section="aportes">
+                    <span class="icon">💰</span>
+                    <span class="text">Aportes</span>
+                </a>
+                <a href="#actividades" class="nav-link" data-section="actividades">
+                    <span class="icon">🎯</span>
+                    <span class="text">Actividades</span>
+                </a>
+                <a href="#prestamos" class="nav-link" data-section="prestamos">
+                    <span class="icon">💳</span>
+                    <span class="text">Préstamos</span>
+                </a>
+                <a href="#polla" class="nav-link" data-section="polla">
+                    <span class="icon">🎟️</span>
+                    <span class="text">La Polla Loca</span>
+                </a>
+                <a href="#config" class="nav-link admin-only" data-section="config" id="navConfig"
+                    style="display: none;">
+                    <span class="icon">⚙️</span>
+                    <span class="text">Ajustes</span>
+                </a>
+                <a href="#usuarios" class="nav-link admin-only" data-section="usuarios" id="navUsuarios"
+                    style="display: none;">
+                    <span class="icon">👤</span>
+                    <span class="text">Usuarios</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="theme-switch-wrapper mb-2" style="padding: 0 5px;">
+                    <button id="themeToggle" class="btn-logout"
+                        style="width: 100%; display: flex; align-items: center; gap: 10px; justify-content: flex-start; margin-bottom: 10px;">
+                        <span class="icon">🌙</span>
+                        <span class="text">Modo Oscuro</span>
+                    </button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name" id="userName">Usuario</span>
+                    <button id="logoutBtn" class="btn-logout">Cerrar Sesión</button>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <!-- Sección: Dashboard -->
+            <section id="dashboard" class="content-section active">
+                <header class="section-header">
+                    <h1>Dashboard</h1>
+                    <p class="section-subtitle">Resumen general del ciclo actual</p>
+                </header>
+
+                <div class="stats-grid">
+                    <div class="stat-card stat-primary">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Total Aportado</h3>
+                            <p class="stat-value" id="totalAportado">$0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-danger">
+                        <div class="stat-icon">💸</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Dinero en Préstamo</h3>
+                            <p class="stat-value" id="capitalPrestado">$0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-info">
+                        <div class="stat-icon">🏦</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Dinero en Caja</h3>
+                            <p class="stat-value" id="dineroDisponible">$0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-success">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Total Ganancias</h3>
+                            <p class="stat-value" id="totalGanancias">$0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Información del Ciclo</h2>
+                        <div class="actions-group">
+                            <button class="btn btn-secondary btn-sm" id="btnActualizarDashboard">🔄</button>
+                            <button class="btn btn-primary btn-sm" id="btnGestionarCiclo">⚙️ Gestionar</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="noCicloAlert" class="alert alert-warning" style="display: none;">
+                            ⚠️ No hay ciclo activo. <a href="#" id="linkCrearCiclo">Iniciar uno nuevo</a>
+                        </div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Ciclo:</span>
+                                <span class="info-value" id="infoCicloNombre">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Participantes:</span>
+                                <span class="info-value" id="infoParticipantes">0</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Fecha de Inicio:</span>
+                                <span class="info-value" id="fechaInicio">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Fecha de Cierre:</span>
+                                <span class="info-value" id="fechaCierre">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Estado:</span>
+                                <span class="badge badge-success" id="estadoCiclo">ACTIVO</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📊 Historial de Ganancias por Ciclo</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container" style="position: relative; height:300px; width:100%">
+                            <canvas id="gananciasChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: Participantes -->
+            <section id="participantes" class="content-section">
+                <header class="section-header">
+                    <h1>Participantes</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" onclick="recalcularGananciasManual()">🔄 Recalcular
+                            Ganancias</button>
+                        <button class="btn btn-primary" id="btnAgregarParticipante">+ Agregar Participante</button>
+                    </div>
+                </header>
+
+                <div class="card" id="participanteFormCard" style="display: none;">
+                    <div class="card-header">
+                        <h2 id="participanteFormTitle"><i class="fas fa-user-plus"></i> Nuevo Participante</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="participanteForm" class="form-grid">
+                            <input type="hidden" id="editParticipanteId">
+                            <div class="form-group">
+                                <label for="participanteNombre">Nombre Completo *</label>
+                                <input type="text" id="participanteNombre" placeholder="Ej: Juan Pérez" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="participanteCedula">Cédula *</label>
+                                <input type="text" id="participanteCedula" placeholder="1234567890" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="participanteTelefono">Teléfono *</label>
+                                <input type="tel" id="participanteTelefono" placeholder="3001234567" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="participanteEmail">Email (opcional)</label>
+                                <input type="email" id="participanteEmail" placeholder="juan@email.com">
+                            </div>
+
+                            <!-- Configuración global de Mora y Pago se define en Ajustes -->
+
+                            <div class="form-group full-width">
+                                <button type="submit" id="btnGuardarParticipante" class="btn btn-primary">💾 Guardar
+                                    Participante</button>
+                                <button type="button" class="btn btn-secondary"
+                                    id="btnCancelarParticipante">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Nombre</th>
+                                        <th>Cédula</th>
+                                        <th>Ahorro</th>
+                                        <th>Ganancia</th>
+                                        <th>Total</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="participantesTableBody">
+                                    <tr>
+                                        <td colspan="7" class="text-center">Cargando participantes...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: La Polla Loca -->
+            <section id="polla" class="content-section">
+                <header class="section-header">
+                    <h1>La Polla Loca</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-warning" id="btnNotificarPolla">📢 Notificar Pendientes</button>
+                        <button class="btn btn-secondary" id="btnSorteoPolla">🎲 Registrar Sorteo</button>
+                        <button class="btn btn-primary" id="btnAsignarPolla">+ Asignar Número</button>
+                    </div>
+                </header>
+
+                <div class="stats-grid">
+                    <div class="stat-card stat-info">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Bolsa Actual</h3>
+                            <p class="stat-value" id="pollaBolsa">$0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-primary">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Próximo Sorteo</h3>
+                            <p class="stat-value" id="pollaFecha">Próximo Viernes</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Números Asignados</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Número</th>
+                                        <th>Participante</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pollaTableBody">
+                                    <tr>
+                                        <td colspan="4" class="text-center">Cargando datos...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Historial de Sorteos</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Número Ganador</th>
+                                        <th>Ganador</th>
+                                        <th>Monto</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pollaHistoryBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center">No hay sorteos registrados</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección de Ajustes (Globales) -->
+            <section id="config" class="content-section">
+                <header class="section-header">
+                    <h1><i class="fas fa-cog"></i> Ajustes del Sistema</h1>
+                    <p class="section-subtitle">Configuración general para todos los socios y aportes.</p>
+                </header>
+
+                <div class="card" style="max-width: 600px;">
+                    <div class="card-header">
+                        <h2>Reglas de Negocio</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="formConfigGlobal" class="form-grid">
+                            <div class="form-group full-width">
+                                <label for="configAporteMinimo">Aporte Mínimo Mensual ($) *</label>
+                                <input type="number" id="configAporteMinimo" min="0" step="1000" placeholder="Ej: 30000"
+                                    required>
+                                <small class="text-muted">Monto mínimo que todo socio debe ahorrar al mes.</small>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="configMoraDiaria">Valor Mora Diaria ($) *</label>
+                                <input type="number" id="configMoraDiaria" min="0" step="100" placeholder="Ej: 3000"
+                                    required>
+                                <small class="text-muted">Multa por cada día de retraso después de la fecha
+                                    límite.</small>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="configDiasPago">Días de Pago (Límites) *</label>
+                                <input type="text" id="configDiasPago" placeholder="15,30" required>
+                                <small class="text-muted">Días del mes en que vencen los aportes (separados por coma).
+                                    Ej: 15,30</small>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary" id="btnGuardarConfig">💾 Guardar
+                                    Configuración</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: Aportes -->
+            <section id="aportes" class="content-section">
+                <header class="section-header">
+                    <h1>Aportes</h1>
+                    <button class="btn btn-primary" id="btnRegistrarAporte">+ Registrar Aporte</button>
+                </header>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Registrar Nuevo Aporte</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="aporteForm" class="form-grid">
+                            <div class="form-group">
+                                <label for="aporteParticipante">Participante</label>
+                                <select id="aporteParticipante" required>
+                                    <option value="">Seleccione un participante</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="aporteMonto">Monto</label>
+                                <input type="number" id="aporteMonto" min="0" step="1000" placeholder="50000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="aporteFecha">Fecha</label>
+                                <input type="date" id="aporteFecha" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="aporteConcepto">Concepto</label>
+                                <input type="text" id="aporteConcepto" placeholder="Aporte mensual enero" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="aporteMora">Mora por Retraso ($)</label>
+                                <div style="display: flex; gap: 5px; align-items: center;">
+                                    <input type="number" id="aporteMora" min="0" step="100" value="0">
+                                    <span id="labelDiasRetraso" class="badge badge-warning" style="display: none;">0
+                                        días</span>
+                                </div>
+                                <small class="text-muted" id="calcMoraInfo">Sugerido automáticamente.</small>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary">Registrar Aporte</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Historial de Aportes</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Participante</th>
+                                        <th>Monto</th>
+                                        <th>Mora</th>
+                                        <th>Total</th>
+                                        <th>Concepto</th>
+                                        <th>Notificar</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="aportesTableBody">
+                                    <tr>
+                                        <td colspan="7" class="text-center">No hay aportes registrados</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: Actividades -->
+            <section id="actividades" class="content-section">
+                <header class="section-header">
+                    <h1>Actividades</h1>
+                    <button class="btn btn-primary" id="btnRegistrarActividad">+ Registrar Actividad</button>
+                </header>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Registrar Nueva Actividad</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="actividadForm" class="form-grid">
+                            <div class="form-group">
+                                <label for="actividadNombre">Nombre de la Actividad</label>
+                                <input type="text" id="actividadNombre" placeholder="Rifa Navideña" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="actividadMonto">Monto Generado</label>
+                                <input type="number" id="actividadMonto" min="0" step="1000" placeholder="200000"
+                                    required>
+                            </div>
+                            <div class="form-group">
+                                <label for="actividadFecha">Fecha</label>
+                                <input type="date" id="actividadFecha" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="actividadResponsable">Responsable</label>
+                                <input type="text" id="actividadResponsable" placeholder="María González" required>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="actividadDescripcion">Descripción</label>
+                                <textarea id="actividadDescripcion" rows="3"
+                                    placeholder="Detalles de la actividad..."></textarea>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary">Registrar Actividad</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Actividades Registradas</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Nombre</th>
+                                        <th>Responsable</th>
+                                        <th>Monto Generado</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="actividadesTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center">No hay actividades registradas</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: Préstamos -->
+            <section id="prestamos" class="content-section">
+                <header class="section-header">
+                    <h1>Préstamos</h1>
+                    <button class="btn btn-primary" id="btnCrearPrestamo">+ Crear Préstamo</button>
+                </header>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Crear Nuevo Préstamo</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="prestamoForm" class="form-grid">
+                            <div class="form-group">
+                                <label for="prestamoParticipante">Participante</label>
+                                <select id="prestamoParticipante" required>
+                                    <option value="">Seleccione un participante</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestamoMonto">Monto del Préstamo</label>
+                                <input type="number" id="prestamoMonto" min="0" step="10000" placeholder="300000"
+                                    required>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestamoTasa">Tasa de Interés (%)</label>
+                                <input type="number" id="prestamoTasa" min="0" max="100" step="0.1" placeholder="2.5"
+                                    required>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestamoFecha">Fecha de Préstamo</label>
+                                <input type="date" id="prestamoFecha" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestamoVencimiento">Fecha de Vencimiento</label>
+                                <input type="date" id="prestamoVencimiento" required>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary">Crear Préstamo</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Préstamos Activos</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Participante</th>
+                                        <th>Monto</th>
+                                        <th>Tasa</th>
+                                        <th>Fecha Préstamo</th>
+                                        <th>Vencimiento</th>
+                                        <th>Interés Generado</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="prestamosTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center">No hay préstamos registrados</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección: Usuarios -->
+            <section id="usuarios" class="content-section">
+                <header class="section-header">
+                    <h1>Gestión de Usuarios</h1>
+                    <p class="section-subtitle">Administra los accesos al sistema</p>
+                </header>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Registrar Nuevo Usuario</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="usuarioForm" class="form-grid">
+                            <div class="form-group">
+                                <label for="usuarioNombre">Nombre Completo</label>
+                                <input type="text" id="usuarioNombre" placeholder="Ej: Juan Pérez" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="usuarioEmail">Correo Electrónico</label>
+                                <input type="email" id="usuarioEmail" placeholder="correo@ejemplo.com" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="usuarioPass">Contraseña</label>
+                                <input type="password" id="usuarioPass" placeholder="••••••••" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="usuarioRol">Rol de Usuario</label>
+                                <select id="usuarioRol" required>
+                                    <option value="operador">Operador (Solo lectura/registro)</option>
+                                    <option value="admin">Administrador (Acceso total)</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary">➕ Crear Usuario</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Usuarios del Sistema</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Nombre</th>
+                                        <th>Email</th>
+                                        <th>Rol</th>
+                                        <th>Fecha Creación</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usuariosTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center">Cargando usuarios...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modales -->
+    <div id="modalCiclo" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalCicloTitle">Gestión de Ciclo</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Vista para Crear Ciclo -->
+                <div id="viewCrearCiclo" style="display: none;">
+                    <form id="formNuevoCiclo" class="form-grid">
+                        <div class="form-group">
+                            <label>Nombre del Ciclo</label>
+                            <input type="text" id="cicloNombre" placeholder="Ej: Año 2024" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Fecha Inicio</label>
+                            <input type="date" id="cicloInicio" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Fecha Cierre Estimada</label>
+                            <input type="date" id="cicloCierre" required>
+                        </div>
+                        <div class="form-group full-width">
+                            <button type="submit" class="btn btn-primary">Iniciar Ciclo</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Vista para Cerrar Ciclo -->
+                <div id="viewCerrarCiclo" style="display: none;">
+                    <p>Vas a cerrar el ciclo actual de la natillera.</p>
+                    <div class="user-info-panel">
+                        <p>Total Recaudado: <strong id="modalCierreRecaudado">$0</strong></p>
+                        <p>Ganancias Totales: <strong id="modalCierreGanancias">$0</strong></p>
+                    </div>
+                    <p><strong>¿Estás seguro de cerrar el ciclo definitivamente?</strong></p>
+                    <div class="modal-footer" style="padding: 10px 0 0 0; border: none;">
+                        <button class="btn btn-secondary close-modal">Cancelar</button>
+                        <button class="btn btn-danger" id="btnConfirmarCierre">Sí, Cerrar Ciclo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Vencimiento -->
+    <div id="modalModificarVencimiento" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Editar Fecha de Vencimiento</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="formModificarVencimiento">
+                    <input type="hidden" id="editPrestamoId">
+                    <div class="form-group">
+                        <label for="nuevaFechaVencimiento">Nueva Fecha</label>
+                        <input type="date" id="nuevaFechaVencimiento" required>
+                    </div>
+                    <div class="modal-footer" style="padding: 10px 0 0 0; border: none;">
+                        <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar Nueva Fecha</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Modal Asignar Polla -->
+    <div id="modalPollaNumeros" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Asignar Número</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="formPollaAsignar">
+                    <div class="form-group">
+                        <label>Número Seleccionado</label>
+                        <input type="text" id="pollaAsignarNumero" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="pollaAsignarParticipante">Participante</label>
+                        <select id="pollaAsignarParticipante" required>
+                            <option value="">Seleccione un participante</option>
+                        </select>
+                    </div>
+                    <div class="modal-footer" style="padding: 10px 0 0 0; border: none;">
+                        <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Confirmar Asignación</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Registrar Sorteo -->
+    <div id="modalPollaSorteo" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Registrar Sorteo</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="formPollaSorteo">
+                    <div class="form-group">
+                        <label for="pollaSorteoFecha">Fecha del Sorteo</label>
+                        <input type="date" id="pollaSorteoFecha" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="pollaSorteoNumero">Número Ganador (2 cifras)</label>
+                        <input type="number" id="pollaSorteoNumero" min="0" max="99" placeholder="00" required>
+                    </div>
+                    <p class="text-muted"><small>Nota: Al registrar el sorteo, la bolsa se distribuirá si hay
+                            ganador o se
+                            acumulará como ganancia general si no lo hay.</small></p>
+                    <div class="modal-footer" style="padding: 10px 0 0 0; border: none;">
+                        <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Registrar Ganador</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
