@@ -326,6 +326,10 @@ function doPost(e) {
       case 'updateConfig':
         result = updateConfig(data);
         break;
+
+      case 'verificarMultas':
+        result = verificarYAplicarMultas();
+        break;
         
       default:
         result = { 
@@ -577,7 +581,9 @@ function agregarParticipante(data) {
       true, // activo
       new Date(), // fecha_ingreso
       data.dia_pago || 15, // día_pago_acordado (Default 15)
-      data.mora_diaria || 3000 // mora_por_dia (Default 3000)
+      data.mora_diaria || 3000, // mora_por_dia (Default 3000)
+      data.frecuencia_pago || 'MENSUAL',
+      data.config_pago || '15'
     ];
     
     sheet.appendRow(newRow);
@@ -1249,6 +1255,8 @@ function actualizarParticipante(data) {
     if (data.email !== undefined) sheet.getRange(rowIndex, 5).setValue(data.email);
     if (data.dia_pago !== undefined) sheet.getRange(rowIndex, 10).setValue(data.dia_pago);
     if (data.mora_diaria !== undefined) sheet.getRange(rowIndex, 11).setValue(data.mora_diaria);
+    if (data.frecuencia_pago !== undefined) sheet.getRange(rowIndex, 12).setValue(data.frecuencia_pago);
+    if (data.config_pago !== undefined) sheet.getRange(rowIndex, 13).setValue(data.config_pago);
 
     return { status: 'success', message: 'Participante actualizado correctamente' };
 
@@ -1538,7 +1546,7 @@ function inicializarBaseDatos() {
     // Definir encabezados para cada hoja
     const hojas = {
       'Usuarios': ['id', 'email', 'password_hash', 'nombre', 'rol', 'created_at'],
-      'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia'],
+      'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia', 'frecuencia_pago', 'config_pago'],
       'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora'],
       'Actividades': ['id', 'nombre', 'descripcion', 'monto_generado', 'fecha', 'responsable', 'estado', 'created_at'],
       'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at'],
@@ -1567,7 +1575,18 @@ function inicializarBaseDatos() {
           sheet.appendRow(['DIAS_PAGO', '15,30', 'Días hábiles para pago sin mora (separados por coma)']);
         }
       } else {
-        mensajes.push(`Hoja '${nombreHoja}' ya existe`);
+        // Verificar si faltan columnas y agregarlas (Migración suave)
+        const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        const targetHeaders = hojas[nombreHoja];
+        
+        targetHeaders.forEach((header, index) => {
+          if (!currentHeaders.includes(header)) {
+            sheet.getRange(1, currentHeaders.length + 1).setValue(header);
+            currentHeaders.push(header);
+            mensajes.push(`Columna '${header}' agregada a la hoja '${nombreHoja}'`);
+          }
+        });
+        mensajes.push(`Hoja '${nombreHoja}' verificada`);
       }
     });
     
@@ -2036,4 +2055,149 @@ function resetBaseDatos() {
   } catch (error) {
     return { status: 'error', message: `Error al resetear base de datos: ${error.message}` };
   }
+}
+
+// ==========================================
+// AUTOMATIZACIÓN DE MULTAS - LOGICA INDIVIDUAL
+// ==========================================
+
+/**
+ * Escanea a todos los participantes y aplica multas de $3.000 COP
+ * si no han cumplido con su compromiso de pago individual.
+ * Se recomienda programar este script para ejecución diaria (Triggers).
+ */
+function verificarYAplicarMultas() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    const participantes = getData(HOJAS.PARTICIPANTES);
+    if (participantes.status !== 'success') return participantes;
+    
+    const aportes = getData(HOJAS.APORTES);
+    let totalMultasAplicadas = 0;
+    
+    participantes.data.forEach(p => {
+      if (!(p.activo === true || p.activo === 'true' || p.activo === 'TRUE')) return;
+      
+      const pId = p.id;
+      const frecuencia = (p.frecuencia_pago || 'MENSUAL').toString().toUpperCase();
+      const config = (p.config_pago || '15').toString();
+      const diaActual = hoy.getDate();
+      const mesActual = hoy.getMonth();
+      const anioActual = hoy.getFullYear();
+      
+      let esDiaLimite = false;
+      let periodoInicio, periodoFin;
+      
+      // Determinar si hoy es el día siguiente al límite acordado
+      // La multa se aplica el día después de que venció el plazo.
+      
+      if (frecuencia === 'MENSUAL') {
+        const diaLimite = parseInt(config);
+        if (diaActual === diaLimite + 1) {
+          esDiaLimite = true;
+          periodoInicio = new Date(anioActual, mesActual, 1);
+          periodoFin = new Date(anioActual, mesActual + 1, 0);
+        }
+      } else if (frecuencia === 'QUINCENAL') {
+        const dias = config.split(',').map(d => parseInt(d.trim()));
+        dias.forEach(diaLimite => {
+          if (diaActual === diaLimite + 1) {
+            esDiaLimite = true;
+            if (diaLimite < 15) {
+              periodoInicio = new Date(anioActual, mesActual, 1);
+              periodoFin = new Date(anioActual, mesActual, 15);
+            } else {
+              periodoInicio = new Date(anioActual, mesActual, 16);
+              periodoFin = new Date(anioActual, mesActual + 1, 0);
+            }
+          }
+        });
+      } else if (frecuencia === 'SEMANAL') {
+        // config espera día de la semana 0-6 (0=Domingo)
+        const diaSemanaLimite = parseInt(config);
+        const hoyDiaSemana = hoy.getDay();
+        if (hoyDiaSemana === (diaSemanaLimite + 1) % 7) {
+          esDiaLimite = true;
+          periodoInicio = new Date(hoy);
+          periodoInicio.setDate(hoy.getDate() - 7);
+          periodoFin = new Date(hoy);
+          periodoFin.setDate(hoy.getDate() - 1);
+        }
+      }
+      
+      if (esDiaLimite) {
+        // Verificar si ya tiene un aporte en este periodo
+        const yaPago = aportes.data.some(a => {
+          if (a.participante_id !== pId) return false;
+          const fechaAporte = new Date(a.fecha);
+          return fechaAporte >= periodoInicio && fechaAporte <= periodoFin && Number(a.monto) > 0;
+        });
+        
+        // Verificar si ya se le aplicó la multa hoy
+        const multaYaAplicada = aportes.data.some(a => {
+          if (a.participante_id !== pId) return false;
+          const fechaAporte = new Date(a.fecha);
+          fechaAporte.setHours(0,0,0,0);
+          return fechaAporte.getTime() === hoy.getTime() && a.concepto === 'MULTA POR RETRASO';
+        });
+        
+        if (!yaPago && !multaYaAplicada) {
+          aplicarMulta(participanteId, hoy);
+          totalMultasAplicadas++;
+        }
+      }
+    });
+    
+    return {
+      status: 'success',
+      message: `Proceso completado. Multas aplicadas: ${totalMultasAplicadas}`
+    };
+    
+  } catch (error) {
+    return { status: 'error', message: `Error en verificarYAplicarMultas: ${error.message}` };
+  }
+}
+
+/**
+ * Aplica una multa a un participante específico
+ */
+function aplicarMulta(participanteId, fecha) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const montoMulta = 3000;
+  const idMulta = generateId();
+  
+  // 1. Registrar entrada negativa en Aportes (descuenta del ahorro)
+  const sheetAportes = ss.getSheetByName(HOJAS.APORTES);
+  sheetAportes.appendRow([
+    idMulta,
+    participanteId,
+    -montoMulta,
+    fecha,
+    'MULTA POR RETRASO',
+    '', // comprobante
+    new Date(), // created_at
+    1, // días retraso
+    0  // monto_mora
+  ]);
+  
+  // 2. Registrar entrada en Ganancias_Distribuidas (fondo común)
+  const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
+  sheetGanancias.appendRow([
+    generateId(),
+    participanteId,
+    'FINE-' + idMulta.split('-')[1],
+    montoMulta,
+    fecha,
+    'MULTA',
+    new Date()
+  ]);
+  
+  // 3. Actualizar totales del participante
+  actualizarTotalAportado(participanteId, -montoMulta);
+  
+  // 4. Forzar recalcular ganancias
+  calcularDistribucionGanancias();
 }

@@ -191,8 +191,19 @@
                                 <label for="participanteEmail">Email (opcional)</label>
                                 <input type="email" id="participanteEmail" placeholder="juan@email.com">
                             </div>
-
-                            <!-- Configuración global de Mora y Pago se define en Ajustes -->
+                            <div class="form-group">
+                                <label for="participanteFrecuencia">Frecuencia de Pago *</label>
+                                <select id="participanteFrecuencia" required>
+                                    <option value="MENSUAL">Mensual</option>
+                                    <option value="QUINCENAL">Quincenal</option>
+                                    <option value="SEMANAL">Semanal</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="participanteConfigPago">Día(s) de Pago *</label>
+                                <input type="text" id="participanteConfigPago" placeholder="15" required>
+                                <small class="text-muted" id="configPagoDesc">Día del mes (1-31). Ejemplo: 15</small>
+                            </div>
 
                             <div class="form-group full-width">
                                 <button type="submit" id="btnGuardarParticipante" class="btn btn-primary">💾 Guardar

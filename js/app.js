@@ -968,6 +968,27 @@
         if (participanteForm) {
             participanteForm.addEventListener('submit', handleParticipanteSubmit);
         }
+
+        // Cambio de descripción según frecuencia
+        const selectFrecuencia = document.getElementById('participanteFrecuencia');
+        const inputConfig = document.getElementById('participanteConfigPago');
+        const descConfig = document.getElementById('configPagoDesc');
+
+        if (selectFrecuencia) {
+            selectFrecuencia.addEventListener('change', function () {
+                const valor = this.value;
+                if (valor === 'MENSUAL') {
+                    inputConfig.placeholder = '15';
+                    descConfig.textContent = 'Día del mes (1-31). Ejemplo: 15';
+                } else if (valor === 'QUINCENAL') {
+                    inputConfig.placeholder = '5, 20';
+                    descConfig.textContent = 'Días del mes separados por coma. Ejemplo: 5, 20';
+                } else if (valor === 'SEMANAL') {
+                    inputConfig.placeholder = '1';
+                    descConfig.textContent = 'Día de la semana (0=Dom, 1=Lun, ..., 6=Sab). Ejemplo: 1';
+                }
+            });
+        }
     }
 
     /**
@@ -989,8 +1010,9 @@
                 nombre: document.getElementById('participanteNombre').value.trim(),
                 cedula: document.getElementById('participanteCedula').value.trim(),
                 telefono: document.getElementById('participanteTelefono').value.trim(),
-                email: document.getElementById('participanteEmail').value.trim()
-                // dia_pago y mora_diaria eliminados (usarán globales)
+                email: document.getElementById('participanteEmail').value.trim(),
+                frecuencia_pago: document.getElementById('participanteFrecuencia').value,
+                config_pago: document.getElementById('participanteConfigPago').value.trim()
             };
 
             const result = await sendDataToBackend(data);
@@ -1034,6 +1056,11 @@
                 document.getElementById('participanteCedula').value = p.cedula;
                 document.getElementById('participanteTelefono').value = p.telefono;
                 document.getElementById('participanteEmail').value = p.email || '';
+                document.getElementById('participanteFrecuencia').value = p.frecuencia_pago || 'MENSUAL';
+                document.getElementById('participanteConfigPago').value = p.config_pago || '15';
+
+                // Disparar evento de cambio para actualizar la descripción
+                document.getElementById('participanteFrecuencia').dispatchEvent(new Event('change'));
 
                 // Cambiar UI
                 document.getElementById('participanteFormTitle').innerHTML = '<i class="fas fa-user-edit"></i> Editar Participante';
@@ -2011,23 +2038,48 @@
 
         try {
             const hoy = new Date(fechaStr + 'T00:00:00');
-            const diasPago = GLOBAL_CONFIG.DIAS_PAGO.split(',').map(d => parseInt(d.trim())).sort((a, b) => a - b);
             const moraDiaria = parseInt(GLOBAL_CONFIG.MORA_DIARIA || 3000);
 
-            // Generar fechas posibles de límite (mes actual y anterior)
+            // Obtener datos del participante para su frecuencia y config
+            const responseP = await fetch(`${API_URL}?action=getParticipantes`);
+            const resultP = await responseP.json();
+            const socio = resultP.data.find(p => p.id === pId);
+
+            if (!socio) return;
+
+            const frecuencia = (socio.frecuencia_pago || 'MENSUAL').toUpperCase();
+            const config = (socio.config_pago || '15').toString();
+
             let fechasLimite = [];
             const mesActual = hoy.getMonth();
             const anioActual = hoy.getFullYear();
 
-            for (let m = -1; m <= 0; m++) {
-                diasPago.forEach(d => {
-                    let f = new Date(anioActual, mesActual + m, d);
-                    // Si el día d no existe en ese mes (ej. 31 de abril), tomamos el último día del mes
-                    if (f.getMonth() !== (mesActual + m + 12) % 12) {
-                        f = new Date(anioActual, mesActual + m + 1, 0);
-                    }
+            if (frecuencia === 'MENSUAL') {
+                const dia = parseInt(config);
+                for (let m = -1; m <= 0; m++) {
+                    let f = new Date(anioActual, mesActual + m, dia);
+                    if (f.getMonth() !== (mesActual + m + 12) % 12) f = new Date(anioActual, mesActual + m + 1, 0);
                     fechasLimite.push(f);
-                });
+                }
+            } else if (frecuencia === 'QUINCENAL') {
+                const dias = config.split(',').map(d => parseInt(d.trim()));
+                for (let m = -1; m <= 0; m++) {
+                    dias.forEach(dia => {
+                        let f = new Date(anioActual, mesActual + m, dia);
+                        if (f.getMonth() !== (mesActual + m + 12) % 12) f = new Date(anioActual, mesActual + m + 1, 0);
+                        fechasLimite.push(f);
+                    });
+                }
+            } else if (frecuencia === 'SEMANAL') {
+                const diaSemana = parseInt(config);
+                // Buscar los últimos 2 domingos/lunes... antes de hoy
+                for (let i = 0; i < 14; i++) {
+                    let f = new Date(hoy);
+                    f.setDate(hoy.getDate() - i);
+                    if (f.getDay() === diaSemana) {
+                        fechasLimite.push(f);
+                    }
+                }
             }
 
             // Ordenar de más reciente a más antigua
