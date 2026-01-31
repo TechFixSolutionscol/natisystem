@@ -29,6 +29,11 @@
     // VARIABLES GLOBALES DEL MÓDULO
     let cicloActivoGlobal = null;
     let noCicloAlert = null;
+    let allParticipantes = []; // Para almacenar todos los participantes y aplicar filtros
+    let filtersInitialized = false; // Flag para evitar múltiples inicializaciones
+    let allAportes = []; // Para almacenar todos los aportes y aplicar filtros
+    let allPrestamos = []; // Para almacenar todos los préstamos y aplicar filtros
+    let filtersPrestamoInitialized = false; // Flag para filtros de préstamos
 
     // ==========================================
     // 1. NAVEGACIÓN ENTRE SECCIONES
@@ -88,6 +93,10 @@
                 break;
             case 'participantes':
                 loadParticipantes();
+                // Asegurar que los filtros se configuren
+                if (typeof setupParticipantFilters === 'function') {
+                    setupParticipantFilters();
+                }
                 break;
             case 'aportes':
                 loadAportes();
@@ -208,6 +217,15 @@
             const result = await response.json();
 
             if (result.status === 'success') {
+                // Guardar datos globalmente para filtros
+                allParticipantes = result.data;
+
+                // Actualizar contador inicial
+                const countTotal = document.getElementById('countTotal');
+                const countFiltered = document.getElementById('countFiltered');
+                if (countTotal) countTotal.textContent = allParticipantes.length;
+                if (countFiltered) countFiltered.textContent = allParticipantes.length;
+
                 renderParticipantes(result.data);
             } else {
                 console.error('Error al cargar participantes:', result.message);
@@ -261,6 +279,172 @@
         `).join('');
     }
 
+    /**
+     * Aplica los filtros a la lista de participantes
+     */
+    function applyParticipantFilters() {
+        const searchTerm = document.getElementById('filterSearch').value.toLowerCase().trim();
+        const estadoFilter = document.getElementById('filterEstado').value;
+        const ahorroFilter = document.getElementById('filterAhorro').value;
+
+        let filtered = allParticipantes.filter(p => {
+            // Filtro de búsqueda (nombre o cédula)
+            const nombre = (p.nombre || '').toString().toLowerCase();
+            const cedula = (p.cedula || '').toString();
+
+            const matchesSearch = searchTerm === '' ||
+                nombre.includes(searchTerm) ||
+                cedula.includes(searchTerm);
+
+            // Filtro de estado
+            const matchesEstado = estadoFilter === 'TODOS' ||
+                (estadoFilter === 'ACTIVO' && p.activo) ||
+                (estadoFilter === 'INACTIVO' && !p.activo);
+
+            // Filtro de ahorro
+            let matchesAhorro = true;
+            if (ahorroFilter !== 'TODOS') {
+                const [min, max] = ahorroFilter.split('-').map(Number);
+                const ahorro = Number(p.total_aportado || 0);
+                matchesAhorro = ahorro >= min && ahorro <= max;
+            }
+
+            return matchesSearch && matchesEstado && matchesAhorro;
+        });
+
+        // Actualizar contador
+        document.getElementById('countFiltered').textContent = filtered.length;
+        document.getElementById('countTotal').textContent = allParticipantes.length;
+
+        // Renderizar resultados filtrados
+        renderParticipantes(filtered);
+    }
+
+    /**
+     * Limpia todos los filtros
+     */
+    function clearParticipantFilters() {
+        document.getElementById('filterSearch').value = '';
+        document.getElementById('filterEstado').value = 'TODOS';
+        document.getElementById('filterAhorro').value = 'TODOS';
+        applyParticipantFilters();
+    }
+
+    /**
+     * Configura los event listeners para los filtros
+     */
+    /**
+     * Configura los event listeners para los filtros
+     */
+    function setupParticipantFilters() {
+        if (filtersInitialized) {
+            console.log('Filtros ya configurados previamente.');
+            return;
+        }
+
+        console.log('Iniciando configuración de filtros...');
+        const filterSearch = document.getElementById('filterSearch');
+        const btnBuscar = document.getElementById('btnBuscarFilter');
+        const filterEstado = document.getElementById('filterEstado');
+        const filterAhorro = document.getElementById('filterAhorro');
+        const btnLimpiar = document.getElementById('btnLimpiarFiltros');
+
+        if (filterSearch) {
+            filterSearch.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') applyParticipantFilters();
+            });
+            filterSearch.addEventListener('input', () => {
+                if (filterSearch.value.trim() === '') applyParticipantFilters();
+            });
+        }
+
+        if (btnBuscar) btnBuscar.addEventListener('click', applyParticipantFilters);
+        if (filterEstado) filterEstado.addEventListener('change', applyParticipantFilters);
+        if (filterAhorro) filterAhorro.addEventListener('change', applyParticipantFilters);
+        if (btnLimpiar) btnLimpiar.addEventListener('click', clearParticipantFilters);
+
+        // Configurar filtros de Aportes
+        setupAporteFilters();
+
+        // Configurar filtros de Préstamos
+        setupPrestamoFilters();
+
+        console.log('Configuración de filtros completada.');
+        filtersInitialized = true;
+    }
+
+    /**
+     * Configura event listeners para filtros de Aportes
+     */
+    function setupAporteFilters() {
+        const filterSearch = document.getElementById('filterAporteSearch');
+        const btnBuscar = document.getElementById('btnBuscarAporte');
+        const filterMes = document.getElementById('filterAporteMes');
+        const filterMora = document.getElementById('filterSoloMora');
+        const btnLimpiar = document.getElementById('btnLimpiarFiltrosAporte');
+
+        if (filterSearch) {
+            filterSearch.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') applyAporteFilters();
+            });
+            filterSearch.addEventListener('input', () => {
+                if (filterSearch.value.trim() === '') applyAporteFilters();
+            });
+        }
+
+        if (btnBuscar) btnBuscar.addEventListener('click', applyAporteFilters);
+        if (filterMes) filterMes.addEventListener('change', applyAporteFilters);
+        if (filterMora) filterMora.addEventListener('change', applyAporteFilters);
+
+        if (btnLimpiar) {
+            btnLimpiar.addEventListener('click', () => {
+                if (filterSearch) filterSearch.value = '';
+                if (filterMes) filterMes.value = '';
+                if (filterMora) filterMora.checked = false;
+                applyAporteFilters();
+            });
+        }
+
+        // Event listener para PDF
+        const btnPDF = document.getElementById('btnDescargarReporte');
+        if (btnPDF) {
+            btnPDF.addEventListener('click', downloadAportesPDF);
+        }
+    }
+
+    /**
+     * Configura event listeners para filtros de Préstamos
+     */
+    function setupPrestamoFilters() {
+        const filterSearch = document.getElementById('filterPrestamoSearch');
+        const btnBuscar = document.getElementById('btnBuscarPrestamo');
+        const filterEstado = document.getElementById('filterPrestamoEstado');
+        const filterVencido = document.getElementById('filterSoloVencidos');
+        const btnLimpiar = document.getElementById('btnLimpiarFiltrosPrestamo');
+
+        if (filterSearch) {
+            filterSearch.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') applyPrestamoFilters();
+            });
+            filterSearch.addEventListener('input', () => {
+                if (filterSearch.value.trim() === '') applyPrestamoFilters();
+            });
+        }
+
+        if (btnBuscar) btnBuscar.addEventListener('click', applyPrestamoFilters);
+        if (filterEstado) filterEstado.addEventListener('change', applyPrestamoFilters);
+        if (filterVencido) filterVencido.addEventListener('change', applyPrestamoFilters);
+
+        if (btnLimpiar) {
+            btnLimpiar.addEventListener('click', () => {
+                if (filterSearch) filterSearch.value = '';
+                if (filterEstado) filterEstado.value = 'TODOS';
+                if (filterVencido) filterVencido.checked = false;
+                applyPrestamoFilters();
+            });
+        }
+    }
+
 
     // ==========================================
     // 4. GESTIÓN DE APORTES
@@ -281,6 +465,14 @@
             const result = await response.json();
 
             if (result.status === 'success') {
+                allAportes = result.data; // Guardar datos para filtros
+
+                // Actualizar contadores
+                const countFiltered = document.getElementById('countFilteredAportes');
+                const countTotal = document.getElementById('countTotalAportes');
+                if (countFiltered) countFiltered.textContent = allAportes.length;
+                if (countTotal) countTotal.textContent = allAportes.length;
+
                 renderAportes(result.data);
             } else {
                 console.error('Error al cargar aportes:', result.message);
@@ -329,6 +521,114 @@
                 </td>
             </tr>
         `).join('');
+    }
+
+    /**
+     * Aplica los filtros a la lista de aportes
+     */
+    function applyAporteFilters() {
+        const searchTerm = document.getElementById('filterAporteSearch').value.toLowerCase().trim();
+        const mesFilter = document.getElementById('filterAporteMes').value;
+        const soloMora = document.getElementById('filterSoloMora').checked;
+
+        let filtered = allAportes.filter(a => {
+            // Filtro de búsqueda (participante o concepto)
+            const participante = (a.participante || '').toLowerCase();
+            const concepto = (a.concepto || '').toLowerCase();
+            const matchesSearch = searchTerm === '' ||
+                participante.includes(searchTerm) ||
+                concepto.includes(searchTerm);
+
+            // Filtro de mes
+            let matchesMes = true;
+            if (mesFilter) {
+                // mesFilter viene como "YYYY-MM"
+                // a.fecha viene como ISO string o YYYY-MM-DD
+                const fechaAporte = a.fecha.substring(0, 7); // Tomar solo YYYY-MM
+                matchesMes = fechaAporte === mesFilter;
+            }
+
+            // Filtro de mora
+            const tieneMora = Number(a.monto_mora || 0) > 0;
+            const matchesMora = !soloMora || tieneMora;
+
+            return matchesSearch && matchesMes && matchesMora;
+        });
+
+        // Actualizar contador
+        const countFiltered = document.getElementById('countFilteredAportes');
+        if (countFiltered) countFiltered.textContent = filtered.length;
+
+        // Lógica del botón PDF: Habilitar solo si hay resultados y todos son del mismo participante
+        const btnPDF = document.getElementById('btnDescargarReporte');
+        if (btnPDF) {
+            const hayResultados = filtered.length > 0;
+            // Verificar si todos los registros tienen el mismo nombre de participante
+            const unicoParticipante = hayResultados && filtered.every(a => a.participante === filtered[0].participante);
+
+            btnPDF.disabled = !unicoParticipante;
+            if (unicoParticipante) {
+                btnPDF.title = `Descargar reporte para ${filtered[0].participante}`;
+                btnPDF.dataset.participante = filtered[0].participante; // Guardar nombre para uso posterior
+            } else {
+                btnPDF.title = "Filtre por un único participante para descargar";
+                btnPDF.dataset.participante = "";
+            }
+        }
+
+        // Renderizar resultados filtrados
+        renderAportes(filtered);
+    }
+
+    /**
+     * Gestiona la descarga del PDF
+     */
+    async function downloadAportesPDF() {
+        const btnPDF = document.getElementById('btnDescargarReporte');
+        if (!btnPDF || btnPDF.disabled) return;
+
+        const nombreParticipante = btnPDF.dataset.participante;
+        if (!nombreParticipante) return;
+
+        // Buscar ID del participante
+        const socio = allParticipantes.find(p => p.nombre === nombreParticipante);
+        if (!socio) {
+            alert('Error: No se pudo identificar al participante.');
+            return;
+        }
+
+        const originalText = btnPDF.innerHTML;
+        btnPDF.disabled = true;
+        btnPDF.innerHTML = '<span class="icon">⏳</span> Generando...';
+
+        try {
+            console.log(`Solicitando PDF para: ${socio.nombre} (ID: ${socio.id})`);
+
+            // FASE 2: Llamada al backend
+            const response = await fetch(`${API_URL}?action=generateAportesPDF&id=${socio.id}`);
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                // FASE 5: Descarga automática
+                const link = document.createElement('a');
+                link.href = `data:application/pdf;base64,${result.base64}`;
+                link.download = result.filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                console.log('Descarga iniciada para:', result.filename);
+            } else {
+                console.error('Error generando PDF:', result.message);
+                alert('❌ Error al generar el reporte: ' + result.message);
+            }
+
+        } catch (error) {
+            console.error('Error descargando PDF:', error);
+            alert('❌ Error de conexión al generar el reporte: ' + error.message);
+        } finally {
+            btnPDF.disabled = false;
+            btnPDF.innerHTML = originalText;
+        }
     }
 
     // ==========================================
@@ -414,6 +714,14 @@
             const result = await response.json();
 
             if (result.status === 'success') {
+                allPrestamos = result.data; // Guardar para filtros
+
+                // Actualizar contador inicial
+                const countTotal = document.getElementById('countTotalPrestamos');
+                const countFiltered = document.getElementById('countFilteredPrestamos');
+                if (countTotal) countTotal.textContent = allPrestamos.length;
+                if (countFiltered) countFiltered.textContent = allPrestamos.length;
+
                 renderPrestamos(result.data);
             } else {
                 console.error('Error al cargar préstamos:', result.message);
@@ -469,6 +777,37 @@
                 </td>
             </tr>
         `).join('');
+    }
+
+    /**
+     * Aplica los filtros a la lista de préstamos
+     */
+    function applyPrestamoFilters() {
+        const searchTerm = document.getElementById('filterPrestamoSearch').value.toLowerCase().trim();
+        const estadoFilter = document.getElementById('filterPrestamoEstado').value;
+        const soloVencidos = document.getElementById('filterSoloVencidos').checked;
+
+        let filtered = allPrestamos.filter(p => {
+            // Filtro de búsqueda (nombre participante)
+            const participante = (p.participante || '').toLowerCase();
+            const matchesSearch = searchTerm === '' || participante.includes(searchTerm);
+
+            // Filtro de estado
+            const matchesEstado = estadoFilter === 'TODOS' || p.estado === estadoFilter;
+
+            // Filtro de vencidos
+            const isVencido = p.estado === 'VENCIDO';
+            const matchesVencido = !soloVencidos || isVencido;
+
+            return matchesSearch && matchesEstado && matchesVencido;
+        });
+
+        // Actualizar contador
+        const countFiltered = document.getElementById('countFilteredPrestamos');
+        if (countFiltered) countFiltered.textContent = filtered.length;
+
+        // Renderizar resultados filtrados
+        renderPrestamos(filtered);
     }
 
     // ==========================================
@@ -790,6 +1129,35 @@
 
         // Formulario de préstamos
         const prestamoForm = document.getElementById('prestamoForm');
+        const btnCrearPrestamo = document.getElementById('btnCrearPrestamo');
+        const prestamoFormCard = document.getElementById('prestamoFormCard');
+        const btnCancelarPrestamo = document.getElementById('btnCancelarPrestamo');
+
+        if (btnCrearPrestamo && prestamoFormCard) {
+            btnCrearPrestamo.addEventListener('click', () => {
+                prestamoFormCard.style.display = 'block';
+                prestamoFormCard.scrollIntoView({ behavior: 'smooth' });
+
+                // Set default dates
+                const fechaInput = document.getElementById('prestamoFecha');
+                if (fechaInput && !fechaInput.value) fechaInput.valueAsDate = new Date();
+
+                const vencimientoInput = document.getElementById('prestamoVencimiento');
+                if (vencimientoInput && !vencimientoInput.value) {
+                    const nextMonth = new Date();
+                    nextMonth.setMonth(nextMonth.getMonth() + 1);
+                    vencimientoInput.valueAsDate = nextMonth;
+                }
+            });
+        }
+
+        if (btnCancelarPrestamo && prestamoFormCard) {
+            btnCancelarPrestamo.addEventListener('click', () => {
+                prestamoFormCard.style.display = 'none';
+                if (prestamoForm) prestamoForm.reset();
+            });
+        }
+
         if (prestamoForm) {
             prestamoForm.addEventListener('submit', handlePrestamoSubmit);
         }
@@ -2078,6 +2446,7 @@
     }
     setupNavigation();
     setupForms();
+    setupParticipantFilters(); // Inicializar filtros
     setupThemeToggle();
     loadDashboardData();
     loadGlobalConfig();
@@ -2126,5 +2495,11 @@
         const url = `https://wa.me/57${telefono.replace(/\D/g, '')}?text=${encodeURIComponent(mensaje)}`;
         window.open(url, '_blank');
     };
+
+    // Exponer funciones globalmente para uso en HTML
+    window.setupParticipantFilters = setupParticipantFilters;
+    window.applyParticipantFilters = applyParticipantFilters;
+    window.applyAporteFilters = applyAporteFilters;
+    window.applyPrestamoFilters = applyPrestamoFilters;
 
 })();

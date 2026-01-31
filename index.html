@@ -215,6 +215,67 @@
                     </div>
                 </div>
 
+                <!-- Barra de Filtros para Participantes -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"
+                        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <h3 style="margin: 0; font-size: 1.1rem;">🔍 Filtros de Búsqueda</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-grid"
+                            style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 15px; align-items: end;">
+                            <!-- Búsqueda por nombre/cédula -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterSearch" style="font-size: 0.9rem; margin-bottom: 5px;">Buscar</label>
+                                <div style="display: flex; gap: 5px;">
+                                    <input type="text" id="filterSearch" placeholder="Nombre o cédula..."
+                                        style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <button id="btnBuscarFilter" class="btn btn-primary"
+                                        onclick="applyParticipantFilters()" style="padding: 0 15px; border-radius: 8px;"
+                                        title="Buscar">
+                                        🔍
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Filtro por estado -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterEstado" style="font-size: 0.9rem; margin-bottom: 5px;">Estado</label>
+                                <select id="filterEstado"
+                                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <option value="TODOS">Todos</option>
+                                    <option value="ACTIVO">Activos</option>
+                                    <option value="INACTIVO">Inactivos</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtro por rango de ahorro -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterAhorro" style="font-size: 0.9rem; margin-bottom: 5px;">Ahorro</label>
+                                <select id="filterAhorro"
+                                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <option value="TODOS">Todos</option>
+                                    <option value="0-50000">$0 - $50,000</option>
+                                    <option value="50000-100000">$50,000 - $100,000</option>
+                                    <option value="100000-999999999">Más de $100,000</option>
+                                </select>
+                            </div>
+
+                            <!-- Botón limpiar filtros -->
+                            <button id="btnLimpiarFiltros" class="btn btn-secondary"
+                                style="padding: 10px 20px; height: 44px; white-space: nowrap;">
+                                🗑️ Limpiar
+                            </button>
+                        </div>
+
+                        <!-- Contador de resultados -->
+                        <div id="filterResultsCount"
+                            style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; text-align: center; font-weight: 500; color: #666;">
+                            Mostrando <span id="countFiltered">0</span> de <span id="countTotal">0</span> participantes
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-body">
                         <div class="table-responsive">
@@ -264,14 +325,19 @@
                         <div class="stat-icon">📅</div>
                         <div class="stat-content">
                             <h3 class="stat-label">Próximo Sorteo</h3>
-                            <p class="stat-value" id="pollaFecha">Próximo Viernes</p>
+                            <p class="stat-value" id="pollaFecha">-</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
-                        <h2>Números Asignados</h2>
+                        <h2>Números (00-99)</h2>
+                        <div id="filterPollaCount"
+                            style="padding: 5px 15px; background: #f8f9fa; border-radius: 20px; font-weight: 500; color: #666; font-size: 0.9rem;">
+                            Mostrando <span id="countFilteredPolla">0</span> de <span id="countTotalPolla">100</span>
+                            números
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -293,6 +359,8 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Barra de Filtros para Polla - TABLA SORTEOS -->
 
                 <div class="card">
                     <div class="card-header">
@@ -409,6 +477,67 @@
                     </div>
                 </div>
 
+                <!-- Barra de Filtros para Aportes -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"
+                        style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
+                        <h3 style="margin: 0; font-size: 1.1rem;">🔍 Filtros de Búsqueda</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-grid"
+                            style="display: grid; grid-template-columns: 2fr 1fr 1fr auto auto; gap: 15px; align-items: end;">
+                            <!-- Búsqueda por participante/concepto -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterAporteSearch" style="font-size: 0.9rem; margin-bottom: 5px;">Buscar
+                                    Participante</label>
+                                <div style="display: flex; gap: 5px;">
+                                    <input type="text" id="filterAporteSearch" placeholder="Nombre o concepto..."
+                                        style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <button id="btnBuscarAporte" class="btn btn-primary" onclick="applyAporteFilters()"
+                                        style="padding: 0 15px; border-radius: 8px;" title="Buscar">
+                                        🔍
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Filtro por Mes -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterAporteMes" style="font-size: 0.9rem; margin-bottom: 5px;">Mes</label>
+                                <input type="month" id="filterAporteMes"
+                                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                            </div>
+
+                            <!-- Checkbox mora -->
+                            <div class="form-group" style="margin: 0; padding-bottom: 12px;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+                                    <input type="checkbox" id="filterSoloMora" style="width: 18px; height: 18px;">
+                                    ⚠️ Con Mora
+                                </label>
+                            </div>
+
+                            <!-- Botón limpiar filtros -->
+                            <button id="btnLimpiarFiltrosAporte" class="btn btn-secondary"
+                                style="padding: 10px 20px; height: 44px; white-space: nowrap;">
+                                🗑️ Limpiar
+                            </button>
+
+                            <!-- Botón descarga PDF -->
+                            <button id="btnDescargarReporte" class="btn btn-danger" disabled
+                                style="padding: 10px 20px; height: 44px; white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+                                <span class="icon">📄</span> PDF
+                            </button>
+                        </div>
+
+                        <!-- Contador de resultados -->
+                        <div id="filterAportesCount"
+                            style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; text-align: center; font-weight: 500; color: #666;">
+                            Mostrando <span id="countFilteredAportes">0</span> de <span id="countTotalAportes">0</span>
+                            aportes
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <h2>Historial de Aportes</h2>
@@ -511,7 +640,7 @@
                     <h1>Préstamos</h1>
                     <button class="btn btn-primary" id="btnCrearPrestamo">+ Crear Préstamo</button>
                 </header>
-                <div class="card">
+                <div class="card" id="prestamoFormCard" style="display: none;">
                     <div class="card-header">
                         <h2>Crear Nuevo Préstamo</h2>
                     </div>
@@ -541,12 +670,77 @@
                                 <label for="prestamoVencimiento">Fecha de Vencimiento</label>
                                 <input type="date" id="prestamoVencimiento" required>
                             </div>
-                            <div class="form-group full-width">
+                            <div class="form-group full-width" style="flex-direction: row; gap: 10px;">
                                 <button type="submit" class="btn btn-primary">Crear Préstamo</button>
+                                <button type="button" class="btn btn-secondary" id="btnCancelarPrestamo"
+                                    style="background-color: #6c757d;">Cancelar</button>
                             </div>
                         </form>
                     </div>
                 </div>
+                <!-- Barra de Filtros para Préstamos -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"
+                        style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                        <h3 style="margin: 0; font-size: 1.1rem;">🔍 Filtros de Búsqueda</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-grid"
+                            style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 15px; align-items: end;">
+                            <!-- Búsqueda por participante -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterPrestamoSearch" style="font-size: 0.9rem; margin-bottom: 5px;">Buscar
+                                    Participante</label>
+                                <div style="display: flex; gap: 5px;">
+                                    <input type="text" id="filterPrestamoSearch" placeholder="Nombre..."
+                                        style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <button id="btnBuscarPrestamo" class="btn btn-success"
+                                        onclick="applyPrestamoFilters()" style="padding: 0 15px; border-radius: 8px;"
+                                        title="Buscar">
+                                        🔍
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Filtro por estado -->
+                            <div class="form-group" style="margin: 0;">
+                                <label for="filterPrestamoEstado"
+                                    style="font-size: 0.9rem; margin-bottom: 5px;">Estado</label>
+                                <select id="filterPrestamoEstado"
+                                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                                    <option value="TODOS">Todos</option>
+                                    <option value="PENDIENTE">Pendientes</option>
+                                    <option value="PAGADO">Pagados</option>
+                                    <option value="VENCIDO">Vencidos</option>
+                                </select>
+                            </div>
+
+                            <!-- Checkbox vencidos -->
+                            <div class="form-group" style="margin: 0; padding-bottom: 12px;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+                                    <input type="checkbox" id="filterSoloVencidos" style="width: 18px; height: 18px;">
+                                    ⚠️ Solo Vencidos
+                                </label>
+                            </div>
+
+                            <!-- Botón limpiar filtros -->
+                            <button id="btnLimpiarFiltrosPrestamo" class="btn btn-secondary"
+                                style="padding: 10px 20px; height: 44px; white-space: nowrap;">
+                                🗑️ Limpiar
+                            </button>
+                        </div>
+
+                        <!-- Contador de resultados -->
+                        <div id="filterPrestamosCount"
+                            style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; text-align: center; font-weight: 500; color: #666;">
+                            Mostrando <span id="countFilteredPrestamos">0</span> de <span
+                                id="countTotalPrestamos">0</span>
+                            préstamos
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <h2>Préstamos Activos</h2>
@@ -772,6 +966,17 @@
     <script src="js/auth.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // Inicializar filtros de participantes cuando la página esté lista
+        window.addEventListener('load', function () {
+            // Esperar un momento para que app.js se inicialice completamente
+            setTimeout(function () {
+                if (typeof setupParticipantFilters === 'function') {
+                    setupParticipantFilters();
+                }
+            }, 500);
+        });
+    </script>
 </body>
 
 </html>

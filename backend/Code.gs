@@ -204,6 +204,14 @@ function doGet(e) {
         result = getHistorialCiclos();
         break;
 
+      case 'getLogs':
+        result = getLogs();
+        break;
+
+      case 'generateAportesPDF':
+        result = generateAportesPDF(e.parameter.id);
+        break;
+        
       case 'getPollaData':
         result = getPollaData();
         break;
@@ -452,6 +460,41 @@ function formatCurrency(amount) {
   return "$" + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+/**
+ * Ejecuta una función dentro de un bloqueo (LockService)
+ * para evitar condiciones de carrera (escrituras simultáneas)
+ * @param {Function} callback - Función a ejecutar
+ * @returns {Object} Resultado de la función o error de bloqueo
+ */
+function executeWithLock(callback) {
+  const lock = LockService.getScriptLock();
+  
+  try {
+    // Intentar obtener el bloqueo por 30 segundos
+    const hasLock = lock.tryLock(30000);
+    
+    if (!hasLock) {
+      return { 
+        status: 'error', 
+        message: 'El sistema está ocupado. Por favor intente de nuevo en unos segundos.' 
+      };
+    }
+    
+    // Ejecutar la función crítica
+    return callback();
+    
+  } catch (error) {
+    return { 
+      status: 'error', 
+      message: `Error inesperado: ${error.message}` 
+    };
+  } finally {
+    // Siempre liberar el bloqueo
+    lock.releaseLock();
+  }
+}
+
+
 // ==========================================
 // FUNCIONES DE AUTENTICACIÓN
 // ==========================================
@@ -545,61 +588,64 @@ function agregarParticipante(data) {
   // Validar campos requeridos
   const validation = validateRequiredFields(data, ['nombre', 'cedula', 'telefono']);
   if (validation) return validation;
-  
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.PARTICIPANTES);
-    
-    if (!sheet) {
-      return { status: 'error', message: 'La hoja Participantes no existe' };
-    }
-    
-    // Validar que la cédula no exista
-    const participantes = getData(HOJAS.PARTICIPANTES);
-    if (participantes.status === 'success') {
-      const existe = participantes.data.some(p => 
-        String(p.cedula) === String(data.cedula)
-      );
+
+  // Ejecutar con bloqueo para evitar duplicados
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.PARTICIPANTES);
       
-      if (existe) {
-        return { 
-          status: 'error', 
-          message: 'Ya existe un participante con esa cédula' 
-        };
+      if (!sheet) {
+        return { status: 'error', message: 'La hoja Participantes no existe' };
       }
+      
+      // Validar que la cédula no exista
+      const participantes = getData(HOJAS.PARTICIPANTES);
+      if (participantes.status === 'success') {
+        const existe = participantes.data.some(p => 
+          String(p.cedula) === String(data.cedula)
+        );
+        
+        if (existe) {
+          return { 
+            status: 'error', 
+            message: 'Ya existe un participante con esa cédula' 
+          };
+        }
+      }
+      
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.nombre,
+        data.cedula,
+        data.telefono,
+        data.email || '',
+        0, // total_aportado
+        0, // ganancias_acumuladas
+        true, // activo
+        new Date(), // fecha_ingreso
+        data.dia_pago || 15, // día_pago_acordado (Default 15)
+        data.mora_diaria || 3000, // mora_por_dia (Default 3000)
+        data.frecuencia_pago || 'MENSUAL',
+        data.config_pago || '15'
+      ];
+      
+      sheet.appendRow(newRow);
+      
+      return { 
+        status: 'success', 
+        message: 'Participante agregado exitosamente',
+        id: newId
+      };
+      
+    } catch (error) {
+      return { 
+        status: 'error', 
+        message: `Error al agregar participante: ${error.message}` 
+      };
     }
-    
-    const newId = generateId();
-    const newRow = [
-      newId,
-      data.nombre,
-      data.cedula,
-      data.telefono,
-      data.email || '',
-      0, // total_aportado
-      0, // ganancias_acumuladas
-      true, // activo
-      new Date(), // fecha_ingreso
-      data.dia_pago || 15, // día_pago_acordado (Default 15)
-      data.mora_diaria || 3000, // mora_por_dia (Default 3000)
-      data.frecuencia_pago || 'MENSUAL',
-      data.config_pago || '15'
-    ];
-    
-    sheet.appendRow(newRow);
-    
-    return { 
-      status: 'success', 
-      message: 'Participante agregado exitosamente',
-      id: newId
-    };
-    
-  } catch (error) {
-    return { 
-      status: 'error', 
-      message: `Error al agregar participante: ${error.message}` 
-    };
-  }
+  });
 }
 
 // ==========================================
@@ -617,71 +663,73 @@ function agregarAporte(data) {
     ['participante_id', 'monto', 'fecha', 'concepto']
   );
   if (validation) return validation;
-  
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheetAportes = ss.getSheetByName(HOJAS.APORTES);
-    
-    if (!sheetAportes) {
-      return { status: 'error', message: 'La hoja Aportes no existe' };
-    }
-    
-    // Validar que el participante exista
-    const participante = findParticipante(data.participante_id);
-    if (!participante) {
+
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheetAportes = ss.getSheetByName(HOJAS.APORTES);
+      
+      if (!sheetAportes) {
+        return { status: 'error', message: 'La hoja Aportes no existe' };
+      }
+      
+      // Validar que el participante exista
+      const participante = findParticipante(data.participante_id);
+      if (!participante) {
+        return { 
+          status: 'error', 
+          message: 'El participante no existe' 
+        };
+      }
+      
+      // Validar que el participante esté activo
+      if (!participante.activo) {
+        return { 
+          status: 'error', 
+          message: 'El participante no está activo' 
+        };
+      }
+      
+      // Validar monto
+      const monto = Number(data.monto);
+      if (isNaN(monto) || monto <= 0) {
+        return { 
+          status: 'error', 
+          message: 'El monto debe ser mayor a cero' 
+        };
+      }
+      
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.participante_id,
+        monto,
+        new Date(data.fecha),
+        data.concepto,
+        data.comprobante || '',
+        new Date(), // created_at
+        data.dias_retraso || 0,
+        data.monto_mora || 0
+      ];
+      
+      sheetAportes.appendRow(newRow);
+      
+      // Actualizar total_aportado del participante
+      actualizarTotalAportado(data.participante_id, monto);
+      
+      return { 
+        status: 'success', 
+        message: 'Aporte registrado exitosamente',
+        id: newId
+      };
+      
+    } catch (error) {
       return { 
         status: 'error', 
-        message: 'El participante no existe' 
+        message: `Error al registrar aporte: ${error.message}` 
       };
     }
-    
-    // Validar que el participante esté activo
-    if (!participante.activo) {
-      return { 
-        status: 'error', 
-        message: 'El participante no está activo' 
-      };
-    }
-    
-    // Validar monto
-    const monto = Number(data.monto);
-    if (isNaN(monto) || monto <= 0) {
-      return { 
-        status: 'error', 
-        message: 'El monto debe ser mayor a cero' 
-      };
-    }
-    
-    const newId = generateId();
-    const newRow = [
-      newId,
-      data.participante_id,
-      monto,
-      new Date(data.fecha),
-      data.concepto,
-      data.comprobante || '',
-      new Date(), // created_at
-      data.dias_retraso || 0,
-      data.monto_mora || 0
-    ];
-    
-    sheetAportes.appendRow(newRow);
-    
-    // Actualizar total_aportado del participante
-    actualizarTotalAportado(data.participante_id, monto);
-    
-    return { 
-      status: 'success', 
-      message: 'Aporte registrado exitosamente',
-      id: newId
-    };
-    
-  } catch (error) {
-    return { 
-      status: 'error', 
-      message: `Error al registrar aporte: ${error.message}` 
-    };
-  }
+  });
 }
 
 /**
@@ -800,49 +848,51 @@ function agregarActividad(data) {
   );
   if (validation) return validation;
   
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.ACTIVIDADES);
-    
-    if (!sheet) {
-      return { status: 'error', message: 'La hoja Actividades no existe' };
-    }
-    
-    // Validar monto
-    const monto = Number(data.monto_generado);
-    if (isNaN(monto) || monto < 0) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.ACTIVIDADES);
+      
+      if (!sheet) {
+        return { status: 'error', message: 'La hoja Actividades no existe' };
+      }
+      
+      // Validar monto
+      const monto = Number(data.monto_generado);
+      if (isNaN(monto) || monto < 0) {
+        return { 
+          status: 'error', 
+          message: 'El monto debe ser mayor o igual a cero' 
+        };
+      }
+      
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.nombre,
+        data.descripcion || '',
+        monto,
+        new Date(data.fecha),
+        data.responsable,
+        'FINALIZADA',
+        new Date() // created_at
+      ];
+      
+      sheet.appendRow(newRow);
+      
+      return { 
+        status: 'success', 
+        message: 'Actividad registrada exitosamente',
+        id: newId
+      };
+      
+    } catch (error) {
       return { 
         status: 'error', 
-        message: 'El monto debe ser mayor o igual a cero' 
+        message: `Error al registrar actividad: ${error.message}` 
       };
     }
-    
-    const newId = generateId();
-    const newRow = [
-      newId,
-      data.nombre,
-      data.descripcion || '',
-      monto,
-      new Date(data.fecha),
-      data.responsable,
-      'FINALIZADA',
-      new Date() // created_at
-    ];
-    
-    sheet.appendRow(newRow);
-    
-    return { 
-      status: 'success', 
-      message: 'Actividad registrada exitosamente',
-      id: newId
-    };
-    
-  } catch (error) {
-    return { 
-      status: 'error', 
-      message: `Error al registrar actividad: ${error.message}` 
-    };
-  }
+  });
 }
 
 // ==========================================
@@ -861,72 +911,74 @@ function agregarPrestamo(data) {
   );
   if (validation) return validation;
   
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
-    
-    if (!sheet) {
-      return { status: 'error', message: 'La hoja Prestamos no existe' };
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
+      
+      if (!sheet) {
+        return { status: 'error', message: 'La hoja Prestamos no existe' };
+      }
+      
+      // Validar que el participante exista y esté activo
+      const participante = findParticipante(data.participante_id);
+      if (!participante) {
+        return { status: 'error', message: 'El participante no existe' };
+      }
+      if (!participante.activo) {
+        return { status: 'error', message: 'El participante no está activo' };
+      }
+      
+      // Validar montos
+      const monto = Number(data.monto_prestado);
+      const tasa = Number(data.tasa_interes);
+      
+      if (isNaN(monto) || monto <= 0) {
+        return { status: 'error', message: 'El monto debe ser mayor a cero' };
+      }
+      if (isNaN(tasa) || tasa < 0 || tasa > 100) {
+        return { status: 'error', message: 'La tasa debe estar entre 0 y 100' };
+      }
+      
+      // Calcular interés simple
+      const fechaPrestamo = new Date(data.fecha_prestamo);
+      const fechaVencimiento = new Date(data.fecha_vencimiento);
+      const diasDiferencia = (fechaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
+      const meses = diasDiferencia / 30;
+      const interes = monto * (tasa / 100) * meses;
+      const saldoPendiente = monto + interes;
+      
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.participante_id,
+        monto,
+        tasa,
+        fechaPrestamo,
+        fechaVencimiento,
+        interes,
+        saldoPendiente,
+        'ACTIVO',
+        new Date() // created_at
+      ];
+      
+      sheet.appendRow(newRow);
+      
+      return { 
+        status: 'success', 
+        message: 'Préstamo creado exitosamente',
+        id: newId,
+        interes_calculado: interes,
+        saldo_total: saldoPendiente
+      };
+      
+    } catch (error) {
+      return { 
+        status: 'error', 
+        message: `Error al crear préstamo: ${error.message}` 
+      };
     }
-    
-    // Validar que el participante exista y esté activo
-    const participante = findParticipante(data.participante_id);
-    if (!participante) {
-      return { status: 'error', message: 'El participante no existe' };
-    }
-    if (!participante.activo) {
-      return { status: 'error', message: 'El participante no está activo' };
-    }
-    
-    // Validar montos
-    const monto = Number(data.monto_prestado);
-    const tasa = Number(data.tasa_interes);
-    
-    if (isNaN(monto) || monto <= 0) {
-      return { status: 'error', message: 'El monto debe ser mayor a cero' };
-    }
-    if (isNaN(tasa) || tasa < 0 || tasa > 100) {
-      return { status: 'error', message: 'La tasa debe estar entre 0 y 100' };
-    }
-    
-    // Calcular interés simple
-    const fechaPrestamo = new Date(data.fecha_prestamo);
-    const fechaVencimiento = new Date(data.fecha_vencimiento);
-    const diasDiferencia = (fechaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
-    const meses = diasDiferencia / 30;
-    const interes = monto * (tasa / 100) * meses;
-    const saldoPendiente = monto + interes;
-    
-    const newId = generateId();
-    const newRow = [
-      newId,
-      data.participante_id,
-      monto,
-      tasa,
-      fechaPrestamo,
-      fechaVencimiento,
-      interes,
-      saldoPendiente,
-      'ACTIVO',
-      new Date() // created_at
-    ];
-    
-    sheet.appendRow(newRow);
-    
-    return { 
-      status: 'success', 
-      message: 'Préstamo creado exitosamente',
-      id: newId,
-      interes_calculado: interes,
-      saldo_total: saldoPendiente
-    };
-    
-  } catch (error) {
-    return { 
-      status: 'error', 
-      message: `Error al crear préstamo: ${error.message}` 
-    };
-  }
+  });
 }
 
 /**
@@ -1014,36 +1066,38 @@ function modificarVencimientoPrestamo(data) {
  * @param {Object} data - {id}
  */
 function registrarPagoPrestamo(data) {
-  try {
-    const { id } = data;
-    if (!id) return { status: 'error', message: 'ID de préstamo requerido' };
+  const { id } = data;
+  if (!id) return { status: 'error', message: 'ID de préstamo requerido' };
 
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
-    const rows = sheet.getDataRange().getValues();
-    
-    let rowIndex = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] === id) {
-        rowIndex = i + 1;
-        break;
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
+      const rows = sheet.getDataRange().getValues();
+      
+      let rowIndex = -1;
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][0] === id) {
+          rowIndex = i + 1;
+          break;
+        }
       }
+
+      if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
+
+      // Actualizar estado a PAGADO (Columna 9 - Índice 8)
+      sheet.getRange(rowIndex, 9).setValue('PAGADO');
+      // Actualizar saldo pendiente a 0 (Columna 8 - Índice 7)
+      sheet.getRange(rowIndex, 8).setValue(0);
+
+      // Recalcular ganancias automáticamente al recibir un pago
+      calcularDistribucionGanancias();
+
+      return { status: 'success', message: 'Pago registrado exitosamente. Los intereses se han movido a ganancias.' };
+    } catch (error) {
+      return { status: 'error', message: error.message };
     }
-
-    if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
-
-    // Actualizar estado a PAGADO (Columna 9 - Índice 8)
-    sheet.getRange(rowIndex, 9).setValue('PAGADO');
-    // Actualizar saldo pendiente a 0 (Columna 8 - Índice 7)
-    sheet.getRange(rowIndex, 8).setValue(0);
-
-    // Recalcular ganancias automáticamente al recibir un pago
-    calcularDistribucionGanancias();
-
-    return { status: 'success', message: 'Pago registrado exitosamente. Los intereses se han movido a ganancias.' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
+  });
 }
 
 // ==========================================
@@ -2160,7 +2214,7 @@ function verificarYAplicarMultas() {
         });
         
         if (!yaPago && !multaYaAplicada) {
-          aplicarMulta(participanteId, hoy);
+          aplicarMulta(pId, hoy);
           totalMultasAplicadas++;
         }
       }
@@ -2216,4 +2270,190 @@ function aplicarMulta(participanteId, fecha) {
   
   // 4. Forzar recalcular ganancias
   calcularDistribucionGanancias();
+}
+/**
+ * Genera un PDF del reporte de aportes para un participante
+ */
+function generateAportesPDF(participanteId) {
+  try {
+    // 1. Validar ID
+    if (!participanteId) return { status: 'error', message: 'ID de participante requerido' };
+
+    // 2. Obtener datos
+    const responseAportes = getData(HOJAS.APORTES);
+    const responseParticipantes = getData(HOJAS.PARTICIPANTES);
+
+    if (responseAportes.status !== 'success' || responseParticipantes.status !== 'success') {
+      return { status: 'error', message: 'Error cargando datos de la base de datos' };
+    }
+
+    // 3. Buscar participante
+    // Convertimos a string para asegurar comparación
+    const participante = responseParticipantes.data.find(p => String(p.id) === String(participanteId));
+    if (!participante) {
+      return { status: 'error', message: 'Participante no encontrado' };
+    }
+
+    // 4. Filtrar aportes y ordenar por fecha (más reciente primero)
+    const aportes = responseAportes.data
+      .filter(a => String(a.participante_id) === String(participanteId))
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    if (aportes.length === 0) {
+      return { status: 'error', message: 'No hay aportes registrados para este participante' };
+    }
+
+    // 5. Calcular totales y construir filas
+    let totalAportado = 0;
+    let totalMora = 0;
+
+    // Helper para formatear moneda
+    const formatMoney = (amount) => {
+      return '$' + Number(amount).toLocaleString('es-CO');
+    };
+
+    // Helper para formatear fecha
+    const formatDate = (dateString) => {
+      try {
+        const date = new Date(dateString);
+        // Ajuste de zona horaria simple si es necesario, o usar UTC
+        return date.toLocaleDateString('es-CO');
+      } catch (e) {
+        return dateString;
+      }
+    };
+
+    const filasHtml = aportes.map(a => {
+      const monto = Number(a.monto) || 0;
+      const mora = Number(a.monto_mora) || 0;
+      const total = monto + mora;
+      
+      totalAportado += monto;
+      totalMora += mora;
+
+      return `
+        <tr>
+          <td>${formatDate(a.fecha)}</td>
+          <td>${a.concepto || 'Aporte mensual'}</td>
+          <td style="text-align:right">${formatMoney(monto)}</td>
+          <td style="text-align:right">${formatMoney(mora)}</td>
+          <td style="text-align:right"><strong>${formatMoney(total)}</strong></td>
+        </tr>
+      `;
+    }).join('');
+
+    const granTotal = totalAportado + totalMora;
+    const fechaGeneracion = new Date().toLocaleString('es-CO');
+
+    // 6. Template HTML
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Helvetica', 'Arial', sans-serif; color: #333; padding: 40px; }
+            .header { text-align: center; margin-bottom: 40px; border-bottom: 3px solid #2563eb; padding-bottom: 20px; }
+            .logo { font-size: 28px; font-weight: bold; color: #2563eb; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+            .title { font-size: 20px; margin: 5px 0 0 0; color: #1e40af; }
+            .meta { font-size: 11px; color: #6b7280; margin-top: 10px; }
+            
+            .info-card { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #e2e8f0; }
+            .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+            .info-row:last-child { margin-bottom: 0; }
+            .label { font-weight: bold; color: #475569; }
+            .value { color: #1e293b; }
+            
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 12px; }
+            th { background: #2563eb; color: white; padding: 12px 10px; text-align: left; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+            td { padding: 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+            tr:nth-child(even) { background-color: #f1f5f9; }
+            
+            .totals-section { display: flex; justify-content: flex-end; }
+            .totals-box { width: 280px; background: #eff6ff; padding: 20px; border-radius: 8px; border: 1px solid #bfdbfe; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+            .total-row.big { font-size: 16px; font-weight: bold; color: #1e40af; border-top: 2px solid #bfdbfe; padding-top: 10px; margin-top: 10px; }
+            
+            .footer { text-align: center; margin-top: 60px; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo">Natillera System</div>
+            <h1 class="title">Estado de Cuenta - Aportes</h1>
+            <div class="meta">Fecha de Generación: ${fechaGeneracion}</div>
+          </div>
+
+          <div class="info-card">
+            <div class="info-row">
+              <span class="label">Participante</span>
+              <span class="value">${participante.nombre}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Documento</span>
+              <span class="value">${participante.cedula || 'No registrado'}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Teléfono</span>
+              <span class="value">${participante.telefono || 'No registrado'}</span>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Concepto</th>
+                <th style="text-align:right">Aporte</th>
+                <th style="text-align:right">Mora</th>
+                <th style="text-align:right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+
+          <div class="totals-section">
+            <div class="totals-box">
+              <div class="total-row">
+                <span>Subtotal Aportes:</span>
+                <span>${formatMoney(totalAportado)}</span>
+              </div>
+              <div class="total-row">
+                <span>Subtotal Mora/Multas:</span>
+                <span>${formatMoney(totalMora)}</span>
+              </div>
+              <div class="total-row big">
+                <span>TOTAL ACUMULADO:</span>
+                <span>${formatMoney(granTotal)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>Este reporte fue generado automáticamente por <strong>Natillera System</strong>.</p>
+            <p>Por favor conserve este documento para su control personal.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // 7. Generar PDF (Blob -> Base64)
+    // Usamos text/html para que Apps Script lo convierta correctamente a PDF
+    const blob = Utilities.newBlob(htmlTemplate, "text/html", "reporte.html");
+    const pdfBlob = blob.getAs("application/pdf");
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+    const filename = `Reporte_Natillera_${participante.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+    return {
+      status: 'success',
+      filename: filename,
+      base64: base64
+    };
+
+  } catch (error) {
+    Logger.log('Error generando PDF: ' + error.toString());
+    return { status: 'error', message: 'Fallo interno al generar PDF: ' + error.toString() };
+  }
 }
