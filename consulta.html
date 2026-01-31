@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Aportes - Natillera</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        /* Estilos específicos para consulta.html */
+        body {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .consulta-container {
+            background: var(--bg-card);
+            width: 100%;
+            max-width: 800px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .consulta-header {
+            background: var(--primary-dark);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .consulta-header h1 {
+            font-size: 1.5rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .consulta-body {
+            padding: 30px;
+        }
+
+        .search-area {
+            max-width: 400px;
+            margin: 0 auto 30px auto;
+            text-align: center;
+        }
+
+        .result-area {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .socio-card {
+            background: #ecfdf5;
+            border: 1px solid #10b981;
+            color: #064e3b;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .socio-info h3 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .socio-info p {
+            margin: 5px 0 0 0;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+
+        .libreta-filters {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .table-wrapper {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .summary-footer {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .summary-item .label {
+            font-size: 0.8rem;
+            color: #64748b;
+            display: block;
+        }
+
+        .summary-item .value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #0f172a;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--secondary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .summary-footer {
+                flex-direction: column;
+                gap: 15px;
+                text-align: right;
+            }
+
+            .socio-card {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="consulta-container">
+        <!-- HEADER -->
+        <header class="consulta-header">
+            <h1><span class="icon">💰</span> Nati System - Consulta de Socios</h1>
+            <p style="margin-top: 5px; opacity: 0.8;">Consulta tu estado de aportes de forma segura</p>
+        </header>
+
+        <div class="consulta-body">
+
+            <!-- BUSCADOR -->
+            <div class="search-area" id="searchArea">
+                <form id="formConsulta" onsubmit="handleConsulta(event)">
+                    <div class="form-group">
+                        <label for="cedulaInput" style="text-align: left;">Número de Cédula</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="cedulaInput" placeholder="Ingresa tu cédula" required
+                                class="form-control"
+                                style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #ccc;">
+                            <button type="submit" class="btn btn-primary" id="btnConsultar">
+                                🔍 Consultar
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                <div id="loading" style="display: none; margin-top: 20px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 10px; color: #666;">Buscando información...</p>
+                </div>
+                <div id="errorMsg" class="message error hidden" style="margin-top: 15px;"></div>
+            </div>
+
+            <!-- RESULTADOS -->
+            <div id="resultArea" class="result-area">
+
+                <div class="socio-card">
+                    <div class="socio-info">
+                        <h3 id="socioNombre">Nombre del Socio</h3>
+                        <p>Cédula: <span id="socioCedula"></span></p>
+                    </div>
+                    <div class="estado-badge">
+                        <span id="socioEstado" class="badge badge-success"
+                            style="font-size: 1rem; padding: 8px 15px;">AL DÍA</span>
+                    </div>
+                </div>
+
+                <div class="libreta-filters">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="mesSelect" style="font-weight: 500;">Filtrar Mes:</label>
+                        <select id="mesSelect" onchange="filtrarPorMes()"
+                            style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;">
+                            <option value="">Todos los movimientos</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="descargarPDF()" id="btnPDF">
+                        <span class="icon">📄</span> Descargar Libreta PDF
+                    </button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Concepto</th>
+                                <th style="text-align: right;">Abono</th>
+                                <th style="text-align: right;">Saldo Acum.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaMovimientos">
+                            <!-- Datos insertados por JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="summary-footer">
+                    <div class="summary-item">
+                        <span class="label">Total Aportes</span>
+                        <span class="value" id="saldoAportes">$0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Ganancias/Intereses</span>
+                        <span class="value" id="ganancias" style="color: #28a745;">$0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">GRAN TOTAL</span>
+                        <span class="value" id="granTotal"
+                            style="color: var(--primary-color); font-size: 1.6rem;">$0</span>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <button onclick="resetConsulta()" class="btn btn-secondary btn-sm">Nueva Consulta</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
+        let currentCedula = '';
+        let currentData = null;
+
+        // Formateador de moneda
+        const formatCurrency = (amount) => {
+            return '$' + Number(amount).toLocaleString('es-CO');
+        };
+
+        // Formateador de fecha
+        const formatDate = (dateString) => {
+            if (!dateString) return '-';
+            // Evitar problemas de timezone (UTC vs Local)
+            const [year, month, day] = dateString.split('-');
+            return `${day}/${month}/${year}`;
+        };
+
+        async function handleConsulta(e) {
+            e.preventDefault();
+            const cedula = document.getElementById('cedulaInput').value.trim();
+            if (!cedula) return;
+
+            // UI Loading
+            document.getElementById('btnConsultar').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('errorMsg').classList.add('hidden');
+            document.getElementById('resultArea').style.display = 'none';
+
+            try {
+                // Fetch data (sin filtro de mes inicial para traer todo y poblar el select)
+                const response = await fetch(`${API_URL}?action=getConsultaSocio&cedula=${cedula}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    currentCedula = cedula;
+                    currentData = result.data;
+                    renderData(result.data);
+                    document.getElementById('resultArea').style.display = 'block';
+                    document.getElementById('searchArea').querySelector('form').style.display = 'none'; // Ocultar form
+                } else {
+                    showError(result.message);
+                }
+
+            } catch (error) {
+                showError('Error de conexión. Intente nuevamente.');
+                console.error(error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('btnConsultar').disabled = false;
+            }
+        }
+
+        function renderData(data) {
+            // 1. Info Socio
+            document.getElementById('socioNombre').textContent = data.socio.nombre;
+            document.getElementById('socioCedula').textContent = data.socio.cedula;
+
+            const badge = document.getElementById('socioEstado');
+            badge.textContent = data.resumen.estado;
+            badge.className = data.resumen.estado === 'AL DÍA' ? 'badge badge-success' : 'badge badge-warning';
+
+            // 2. Poblar Select de Meses
+            const select = document.getElementById('mesSelect');
+            select.innerHTML = '<option value="">Histórico Completo</option>';
+
+            // Nombres de meses en español
+            const mesesEs = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+            data.meses.forEach(mesStr => { // mesStr formato YYYY-MM
+                const [year, month] = mesStr.split('-');
+                const monthName = mesesEs[parseInt(month) - 1];
+                const option = document.createElement('option');
+                option.value = mesStr;
+                option.textContent = `${monthName} ${year}`;
+                select.appendChild(option);
+            });
+
+            // Seleccionar mes actual por defecto si existe, si no, dejar "Histórico"
+            const hoy = new Date().toISOString().substring(0, 7);
+            if (data.meses.includes(hoy)) {
+                select.value = hoy;
+            } else if (data.meses.length > 0) {
+                // O seleccionar el último mes disponible
+                select.value = data.meses[0];
+            }
+
+            // 3. Renderizar Tabla (Aplicando filtro inicial del select)
+            filtrarPorMes();
+        }
+
+        function filtrarPorMes() {
+            const mesSeleccionado = document.getElementById('mesSelect').value;
+            const tbody = document.getElementById('tablaMovimientos');
+            tbody.innerHTML = '';
+
+            let movimientos = currentData.movimientos;
+            let saldoAcumulado = 0; // Para calcular saldo progresivo si fuera necesario, pero la API devuelve saldo total.
+            // Para "Libreta" visual, idealmente mostramos el saldo tras cada movimiento.
+            // Pero el backend solo nos dio el saldo Total Global.
+            // Podemos simular un saldo corriente inverso desde el final, o simplemente mostrar el acumulado del aporte.
+            // La instrucción dice: Tabla: Fecha | Abono | Saldo.
+            // Mostraremos el "Total" de esa transacción como "Abono Total" (Monto + Mora).
+            // La columna Saldo es compleja si no tenemos el histórico completo desde el inicio ordenado.
+            // Asumiremos que "Saldo" se refiere al acumulado del socio hasta esa fecha.
+            // Dado que no tenemos esa info exacta por transacción desde el backend (solo el total actual),
+            // podemos omitir "Saldo" por renglón o mostrar el acumulado PROGRESIVO recalculandolo.
+
+            // Vamos a recalcular el saldo progresivo desde 0 para mostrarlo correctamente.
+            // Ordenamos ascendente para calcular, luego mostramos descendente si queremos.
+            // Pero el array ya viene descendente (lo más nuevo arriba).
+
+            // Truco: Calcular saldo total actual y restar hacia atrás.
+            let saldoCorriente = Number(currentData.resumen.saldo_aportes); // Saldo final actual
+
+            // Crear copia para manipular
+            const movimientosCalculo = [...currentData.movimientos]; // Ya está descendente (Hoy -> Ayer)
+
+            // Asignar saldos a cada movimiento (Saldo DESPUÉS del movimiento)
+            movimientosCalculo.forEach(m => {
+                m.saldoDespues = saldoCorriente;
+                saldoCorriente -= m.total; // Restamos para encontrar el saldo antes de este movimiento
+            });
+
+            // Filtrar para visualización
+            let movimientosVisuales = movimientosCalculo;
+            if (mesSeleccionado) {
+                movimientosVisuales = movimientosCalculo.filter(m => m.mesStr === mesSeleccionado);
+            }
+
+            if (movimientosVisuales.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No hay movimientos en este periodo</td></tr>';
+                document.getElementById('totalPeriodo').textContent = '$0';
+            } else {
+                let totalPeriodoVal = 0;
+
+                movimientosVisuales.forEach(m => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${formatDate(m.fechaStr)}</td>
+                        <td>${m.concepto}</td>
+                        <td style="text-align: right; color: ${m.total < 0 ? 'red' : 'green'};">
+                            ${formatCurrency(m.total)}
+                        </td>
+                        <td style="text-align: right; font-weight: bold;">
+                            ${formatCurrency(m.saldoDespues)}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                    totalPeriodoVal += m.total;
+                });
+
+                // Actualizar total periodo (Visual, no del resumen global)
+                // Esto es solo la suma de lo que se ve en la tabla
+                // document.getElementById('totalPeriodo').textContent = formatCurrency(totalPeriodoVal); 
+                // Nota: Eliminamos 'Abonado este periodo' del footer principal para dar prioridad a los totales globales.
+                // Si el usuario quiere ver lo del periodo, está la columna Suma o se podría añadir otro elemento.
+                // Como pidieron "Total con intereses acumulado", damos prioridad a esa vista general.
+            }
+
+            // Actualizar Saldos Globales
+            if (currentData && currentData.resumen) {
+                document.getElementById('saldoAportes').textContent = formatCurrency(currentData.resumen.saldo_aportes);
+                document.getElementById('ganancias').textContent = formatCurrency(currentData.resumen.ganancias);
+                document.getElementById('granTotal').textContent = formatCurrency(currentData.resumen.saldo_total);
+            }
+        }
+
+        async function descargarPDF() {
+            const mesSeleccionado = document.getElementById('mesSelect').value;
+            const btn = document.getElementById('btnPDF');
+
+            // UI Feedback
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner" style="width: 15px; height: 15px; border-width: 2px;"></span> Generando...';
+
+            try {
+                // Call Backend
+                let url = `${API_URL}?action=generateConsultaPDF&cedula=${currentCedula}`;
+                if (mesSeleccionado) {
+                    url += `&mes=${mesSeleccionado}`;
+                }
+
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Download Base64
+                    const link = document.createElement('a');
+                    link.href = `data:application/pdf;base64,${result.base64}`;
+                    link.download = result.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    alert('Error: ' + result.message);
+                }
+
+            } catch (error) {
+                alert('Error de conexión al generar PDF');
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        }
+
+        function resetConsulta() {
+            currentCedula = '';
+            currentData = null;
+            document.getElementById('cedulaInput').value = '';
+            document.getElementById('resultArea').style.display = 'none';
+            document.getElementById('searchArea').querySelector('form').style.display = 'block';
+            document.getElementById('errorMsg').classList.add('hidden');
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
+        }
+
+    </script>
+</body>
+
+</html>

@@ -215,6 +215,15 @@ function doGet(e) {
       case 'getPollaData':
         result = getPollaData();
         break;
+
+      case 'getConsultaSocio':
+        result = getConsultaSocio(e.parameter.cedula, e.parameter.mes);
+        break;
+
+      case 'generateConsultaPDF':
+        result = generateConsultaPDF(e.parameter.cedula, e.parameter.mes);
+        break;
+
         
       default:
         result = { 
@@ -2455,5 +2464,257 @@ function generateAportesPDF(participanteId) {
   } catch (error) {
     Logger.log('Error generando PDF: ' + error.toString());
     return { status: 'error', message: 'Fallo interno al generar PDF: ' + error.toString() };
+  }
+}
+// ==========================================
+// FUNCIONES DE CONSULTA EXTERNA
+// ==========================================
+
+/**
+ * Obtiene los datos para la consulta externa de un socio
+ * @param {string} cedula - Cédula del socio
+ * @param {string} mes - Mes opcional en formato YYYY-MM
+ * @returns {Object} Datos del socio y sus movimientos
+ */
+function getConsultaSocio(cedula, mes) {
+  try {
+    if (!cedula) return { status: 'error', message: 'Cédula requerida' };
+
+    // 1. Buscar socio
+    const participantes = getData(HOJAS.PARTICIPANTES);
+    if (participantes.status !== 'success') return { status: 'error', message: 'Error de base de datos' };
+
+    const socio = participantes.data.find(p => String(p.cedula).trim() === String(cedula).trim());
+    
+    if (!socio) {
+      return { status: 'error', message: 'Cédula no encontrada en el sistema' };
+    }
+
+    // 2. Obtener movimientos
+    const aportes = getData(HOJAS.APORTES);
+    if (aportes.status !== 'success') return { status: 'error', message: 'Error consultando aportes' };
+
+    // 3. Procesar movimientos filtra solo los del socio
+    const movimientosSocio = aportes.data
+      .filter(a => String(a.participante_id) === String(socio.id))
+      .map(a => {
+        // Asegurar fecha válida
+        let fechaObj;
+        try { fechaObj = new Date(a.fecha); } catch(e) { fechaObj = new Date(); }
+        
+        return {
+          fecha: fechaObj,
+          fechaStr: fechaObj.toISOString().substring(0, 10), // YYYY-MM-DD
+          mesStr: fechaObj.toISOString().substring(0, 7),    // YYYY-MM
+          monto: Number(a.monto) || 0,
+          mora: Number(a.monto_mora) || 0,
+          concepto: a.concepto,
+          total: (Number(a.monto) || 0) + (Number(a.monto_mora) || 0)
+        };
+      })
+      .sort((a, b) => b.fecha - a.fecha); // Orden descendente
+
+    // 4. Obtener lista de meses disponibles (para el filtro)
+    const mesesSet = new Set();
+    movimientosSocio.forEach(m => mesesSet.add(m.mesStr));
+    const mesesDisponibles = Array.from(mesesSet).sort().reverse(); // Meses más recientes primero
+
+    // 5. Filtrar por mes si se solicita
+    let movimientosFinales = movimientosSocio;
+    if (mes) {
+      movimientosFinales = movimientosSocio.filter(m => m.mesStr === mes);
+    } else {
+        // Por defecto: Si no hay mes, mostrar todo (o podríamos mostrar solo el último mes, pero la libreta digital suele ser completa)
+        // La solicitud dice: "Mes opcional (por defecto mes actual)".
+        // Si aplicamos filtro por defecto al mes actual y no hay datos, puede parecer vacía.
+        // Mejor devolvemos TODO si no hay filtro, o manejamos el "por defecto" en el frontend.
+        // Sin embargo, para cumplir "Mes opcional (por defecto mes actual)" podríamos filtrar aquí.
+        // Vamos a devolver TODOS los datos al frontend, y que el frontend maneje la visualización inicial.
+        // Espera, "Consulta de datos" dice "Aplicar filtro por mes (si se envía)".
+        // Si devuelvo todo, es más rápido navegar. Pero si son muchos datos...
+        // Vamos a seguir la instrucción estrictamente: "Aplicar filtro por mes (si se envía)".
+    }
+
+    // 6. Calcular Resumen del periodo seleccionado
+    const totalAbonado = movimientosFinales.reduce((sum, m) => sum + m.monto, 0);
+    const saldoAportes = Number(socio.total_aportado) || 0; 
+    const ganancias = Number(socio.ganancias_acumuladas) || 0;
+    const totalConsolidado = saldoAportes + ganancias;
+    
+    // Estado (lógica simple, se puede mejorar con multas reales)
+    // Usaremos la bandera 'activo' y si tiene moras recientes
+    let estado = socio.activo ? 'AL DÍA' : 'INACTIVO';
+    // Si tiene moras pendientes (esto es complejo de calcular sin ir a prestamos/reglas, 
+    // pero podemos ver si tiene aportes tipo mora o algo así, por ahora simple).
+    
+    return {
+      status: 'success',
+      data: {
+        socio: {
+          nombre: socio.nombre,
+          cedula: socio.cedula,
+          // No enviamos teléfono ni email por privacidad
+        },
+        movimientos: movimientosFinales,
+        meses: mesesDisponibles,
+        resumen: {
+          total_periodo: totalAbonado,
+          saldo_aportes: saldoAportes,
+          ganancias: ganancias,
+          saldo_total: totalConsolidado,
+          estado: estado
+        }
+      }
+    };
+
+  } catch (error) {
+    return { status: 'error', message: `Error consulta socio: ${error.message}` };
+  }
+}
+
+/**
+ * Genera el PDF de consulta externa
+ */
+function generateConsultaPDF(cedula, mes) {
+  try {
+    if (!cedula) return { status: 'error', message: 'Cédula requerida' };
+
+    // Reutilizamos la lógica de obtención de datos
+    const consulta = getConsultaSocio(cedula, mes);
+    if (consulta.status !== 'success') return consulta;
+
+    const data = consulta.data;
+    const socio = data.socio;
+    const movimientos = data.movimientos;
+    
+    // Formateadores
+    const formatMoney = (amount) => '$' + Number(amount).toLocaleString('es-CO');
+    const formatDate = (dateString) => {
+        try {
+            // Ajustamos zona horaria UTC a local simple
+            const d = new Date(dateString); 
+            d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+            return d.toLocaleDateString('es-CO');
+        } catch(e) { return dateString; }
+    };
+
+    // Filas de la tabla
+    const filasHtml = movimientos.map(m => `
+        <tr>
+            <td>${formatDate(m.fechaStr)}</td>
+            <td style="text-align:right">${formatMoney(m.monto)}</td>
+            <td style="text-align:right">${formatMoney(m.total)}</td>
+        </tr>
+    `).join('');
+
+    const fechaGeneracion = new Date().toLocaleString('es-CO');
+    const mesTitulo = mes ? mes : 'Histórico Completo';
+
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Helvetica', 'Arial', sans-serif; color: #333; padding: 40px; }
+            .header { text-align: center; border-bottom: 3px solid #10b981; padding-bottom: 20px; margin-bottom: 30px; }
+            .company { font-size: 24px; font-weight: bold; color: #10b981; text-transform: uppercase; }
+            .title { font-size: 18px; color: #065f46; margin: 5px 0; }
+            .meta { font-size: 12px; color: #6b7280; }
+            
+            .card { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; margin-bottom: 25px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+            .label { font-weight: bold; color: #047857; }
+            
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+            th { background: #10b981; color: white; padding: 10px; text-align: left; }
+            td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
+            tr:nth-child(even) { background: #f9fafb; }
+            
+            .summary { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .summary-box { width: 250px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; }
+            .sum-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; }
+            .sum-total { font-weight: bold; font-size: 15px; color: #059669; border-top: 1px solid #bbf7d0; padding-top: 8px; margin-top: 8px; }
+            
+            .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="company">Nati System</div>
+            <div class="title">Estado de Aportes - Natillera</div>
+            <div class="meta">Generado: ${fechaGeneracion}</div>
+          </div>
+          
+          <div class="card">
+            <div class="row">
+              <span class="label">Socio:</span>
+              <span>${socio.nombre}</span>
+            </div>
+            <div class="row">
+              <span class="label">Cédula:</span>
+              <span>${socio.cedula}</span>
+            </div>
+            <div class="row">
+              <span class="label">Periodo:</span>
+              <span>${mesTitulo}</span>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th style="text-align:right">Abono</th>
+                <th style="text-align:right">Total Op.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+          
+          <div class="summary">
+            <div class="summary-box">
+              <div class="sum-row">
+                <span>Total Abonado (Periodo):</span>
+                <span>${formatMoney(data.resumen.total_periodo)}</span>
+              </div>
+              <div class="sum-row">
+                <span>Total Aportes Acumulados:</span>
+                <span>${formatMoney(data.resumen.saldo_aportes)}</span>
+              </div>
+              <div class="sum-row">
+                <span>Ganancias/Intereses:</span>
+                <span>${formatMoney(data.resumen.ganancias)}</span>
+              </div>
+              <div class="sum-total sum-row">
+                <span>GRAN TOTAL (Aportes + Ganancias):</span>
+                <span>${formatMoney(data.resumen.saldo_total)}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="footer">
+            Documento generado automáticamente por Nati System
+          </div>
+        </body>
+      </html>
+    `;
+
+    const blob = Utilities.newBlob(htmlTemplate, "text/html", "estado_cuenta.html");
+    const pdfBlob = blob.getAs("application/pdf");
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+    const safeName = socio.nombre.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `estado_aportes_${safeName}_${mes || 'historico'}.pdf`;
+
+    return {
+      status: 'success',
+      filename: filename,
+      base64: base64
+    };
+
+  } catch (error) {
+    return { status: 'error', message: 'Error PDF: ' + error.message };
   }
 }
