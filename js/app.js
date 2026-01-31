@@ -934,41 +934,6 @@
 
         // === GESTIÓN DE PARTICIPANTES ===
 
-        // Botón para mostrar formulario
-        const btnAgregarParticipante = document.getElementById('btnAgregarParticipante');
-        if (btnAgregarParticipante) {
-            btnAgregarParticipante.addEventListener('click', function () {
-                const formCard = document.getElementById('participanteFormCard');
-                if (formCard) {
-                    // Resetear para "Nuevo"
-                    document.getElementById('participanteForm').reset();
-                    document.getElementById('editParticipanteId').value = '';
-                    document.getElementById('participanteFormTitle').innerHTML = '<i class="fas fa-user-plus"></i> Nuevo Participante';
-                    document.getElementById('btnGuardarParticipante').textContent = '💾 Guardar Participante';
-
-                    formCard.style.display = formCard.style.display === 'none' ? 'block' : 'none';
-                    if (formCard.style.display === 'block') {
-                        document.getElementById('participanteNombre').focus();
-                    }
-                }
-            });
-        }
-
-        // Botón cancelar
-        const btnCancelarParticipante = document.getElementById('btnCancelarParticipante');
-        if (btnCancelarParticipante) {
-            btnCancelarParticipante.addEventListener('click', function () {
-                document.getElementById('participanteForm').reset();
-                document.getElementById('participanteFormCard').style.display = 'none';
-            });
-        }
-
-        // Envío del formulario de participantes
-        const participanteForm = document.getElementById('participanteForm');
-        if (participanteForm) {
-            participanteForm.addEventListener('submit', handleParticipanteSubmit);
-        }
-
         // Cambio de descripción según frecuencia
         const selectFrecuencia = document.getElementById('participanteFrecuencia');
         const inputConfig = document.getElementById('participanteConfigPago');

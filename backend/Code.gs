@@ -1057,13 +1057,13 @@ function calcularDistribucionGanancias() {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     
-    // 1. Calcular total intereses generados (SOLO DE PRÉSTAMOS PAGADOS)
+    // 1. Calcular total intereses generados (TODOS LOS PRÉSTAMOS: ACTIVO, VENCIDO, PAGADO)
     const prestamos = getData(HOJAS.PRESTAMOS);
     let totalIntereses = 0;
     if (prestamos.status === 'success' && prestamos.data) {
       totalIntereses = prestamos.data.reduce((sum, p) => {
-        const estado = String(p.estado || '').trim().toUpperCase();
-        return sum + (estado === 'PAGADO' ? Number(p.interes_generado || 0) : 0);
+        // Incluir intereses de todos los préstamos, no solo los pagados
+        return sum + Number(p.interes_generado || 0);
       }, 0);
     }
     
@@ -1078,7 +1078,7 @@ function calcularDistribucionGanancias() {
     
     const gananciaTotal = totalIntereses + totalActividades;
     
-    // 3. Obtener participantes activos
+    // 3. Obtener participantes
     const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
     const dataParticipantes = sheetParticipantes.getDataRange().getValues();
     // Headers: id, nombre, cedula, telefono, email, total_aportado, ganancias, activo, fecha
@@ -1086,61 +1086,76 @@ function calcularDistribucionGanancias() {
     // Índices (basados en inicializarBaseDatos)
     // 0: id, 6: ganancias_acumuladas, 7: activo
     
-    let activeCount = 0;
-    const updates = [];
+    // Contar TODOS los participantes (no solo activos)
+    const totalParticipantes = dataParticipantes.length - 1; // -1 para excluir header
     
-    // Identificar activos y contarlos (saltando header)
-    for (let i = 1; i < dataParticipantes.length; i++) {
-        const activo = dataParticipantes[i][7];
-        if (activo === true || activo === 'true' || activo === 'TRUE') {
-            activeCount++;
-        }
+    if (totalParticipantes === 0) {
+        return { status: 'success', message: 'No hay participantes registrados' };
     }
     
-    if (activeCount === 0) {
-        return { status: 'success', message: 'No hay participantes activos para distribuir ganancias' };
-    }
-    
-    const gananciaPorPersona = Number((gananciaTotal / activeCount).toFixed(2));
+    // IMPORTANTE: Dividir entre TODOS los participantes, no solo los activos
+    const gananciaPorPersona = Number((gananciaTotal / totalParticipantes).toFixed(2));
     const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
     
-    // 4. LIMPIEZA: Eliminar distribuciones previas para evitar duplicidad al recalcular
+    // 4. LIMPIEZA AGRESIVA: Eliminar TODO excepto el encabezado y las ganancias de POLLA
+    // Este enfoque garantiza que no queden distribuciones antiguas
     const rowsG = sheetGanancias.getDataRange().getValues();
-    // Empezamos desde el final para no alterar los índices al borrar
-    for (let i = rowsG.length - 1; i >= 1; i--) {
-        if (rowsG[i][5] === 'DISTRIBUCION') {
-            sheetGanancias.deleteRow(i + 1);
+    
+    if (rowsG.length > 1) {
+        const header = rowsG[0]; // Guardar encabezado
+        
+        // Filtrar SOLO las ganancias de POLLA (premios individuales)
+        const pollaEntries = [];
+        for (let i = 1; i < rowsG.length; i++) {
+            const tipo = String(rowsG[i][5] || '').trim().toUpperCase();
+            // Mantener solo POLLA, eliminar TODO lo demás (DISTRIBUCION y cualquier otra cosa)
+            if (tipo === 'POLLA') {
+                pollaEntries.push(rowsG[i]);
+            }
+        }
+        
+        // Limpiar COMPLETAMENTE la hoja
+        sheetGanancias.clearContents();
+        sheetGanancias.clearFormats();
+        
+        // Reescribir: primero el encabezado
+        sheetGanancias.getRange(1, 1, 1, header.length).setValues([header]);
+        
+        // Luego las entradas de POLLA (si existen)
+        if (pollaEntries.length > 0) {
+            sheetGanancias.getRange(2, 1, pollaEntries.length, pollaEntries[0].length).setValues(pollaEntries);
         }
     }
 
     const fechaDist = new Date();
     
-    // 5. Aplicar nuevas distribuciones y actualizar totales
-    // Primero, creamos todas las nuevas distribuciones
+    // 5. Aplicar nuevas distribuciones a TODOS los participantes (activos e inactivos)
+    // Ahora agregamos las nuevas distribuciones a la hoja limpia
     for (let i = 1; i < dataParticipantes.length; i++) {
         const pId = dataParticipantes[i][0];
-        const activo = dataParticipantes[i][7];
         
-        if (activo === true || activo === 'true' || activo === 'TRUE') {
-            sheetGanancias.appendRow([
-                generateId(),
-                pId,
-                'DIST-' + generateId().split('-')[1],
-                gananciaPorPersona,
-                fechaDist,
-                'DISTRIBUCION',
-                new Date()
-            ]);
-        }
+        // Distribuir a TODOS, sin importar si están activos o inactivos
+        sheetGanancias.appendRow([
+            generateId(),
+            pId,
+            'DIST-' + generateId().split('-')[1],
+            gananciaPorPersona,
+            fechaDist,
+            'DISTRIBUCION',
+            new Date()
+        ]);
     }
 
     // Finalmente, actualizamos la tabla de participantes sumando TODO su historial de ganancias
+    // Las ganancias de POLLA son individuales y se suman solo al ganador
+    // Las ganancias de DISTRIBUCION son equitativas y se suman a todos los activos
     const actualizadasG = sheetGanancias.getDataRange().getValues();
     const mapGanancias = {};
     
     for (let j = 1; j < actualizadasG.length; j++) {
         const pId = actualizadasG[j][1];
         const monto = Number(actualizadasG[j][3] || 0);
+        // Sumar TODAS las ganancias (DISTRIBUCION + POLLA) para cada participante
         mapGanancias[pId] = (mapGanancias[pId] || 0) + monto;
     }
 
@@ -1152,12 +1167,12 @@ function calcularDistribucionGanancias() {
     
     return {
         status: 'success', 
-        message: 'Ganancias redistribuidas correctamente (reparto equitativo + premios polla)',
+        message: 'Ganancias redistribuidas correctamente (reparto equitativo entre TODOS los participantes)',
         data: {
             totalIntereses,
             totalActividades,
             gananciaTotal,
-            participantesActivos: activeCount,
+            totalParticipantes: totalParticipantes,
             gananciaPorPersona
         }
     };
@@ -1898,12 +1913,12 @@ function registrarSorteoPolla(data) {
     if (idGanador) {
       mensaje = `¡Tenemos un ganador! ${nombreGanador} con el número ${numeroGanador}. Se lleva ${formatCurrency(montoPozo)}`;
       
-      // NEW: Registrar ganancia individual
+      // Registrar ganancia individual en Ganancias_Distribuidas
       const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
       sheetGanancias.appendRow([
         generateId(),
         idGanador,
-        'POLLA-' + generateId().split('-')[1], // ID ficticio o referencia
+        'POLLA-' + generateId().split('-')[1],
         montoPozo,
         new Date(fecha),
         'POLLA',
@@ -2183,15 +2198,16 @@ function aplicarMulta(participanteId, fecha) {
     0  // monto_mora
   ]);
   
-  // 2. Registrar entrada en Ganancias_Distribuidas (fondo común)
-  const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
-  sheetGanancias.appendRow([
+  // 2. Registrar como ACTIVIDAD para que se reparta equitativamente
+  const sheetActividades = ss.getSheetByName(HOJAS.ACTIVIDADES);
+  sheetActividades.appendRow([
     generateId(),
-    participanteId,
-    'FINE-' + idMulta.split('-')[1],
+    'Multa por Retraso - ' + fecha.toLocaleDateString('es-CO'),
+    'Multa aplicada automáticamente por incumplimiento de pago',
     montoMulta,
     fecha,
-    'MULTA',
+    'SISTEMA',
+    'FINALIZADA',
     new Date()
   ]);
   
