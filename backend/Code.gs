@@ -224,6 +224,9 @@ function doGet(e) {
         result = generateConsultaPDF(e.parameter.cedula, e.parameter.mes);
         break;
 
+      case 'getMovimientosPrestamo':
+        result = getMovimientosPrestamo(e.parameter.prestamo_id);
+        break;
         
       default:
         result = { 
@@ -340,12 +343,24 @@ function doPost(e) {
         result = registrarPagoPrestamo(data);
         break;
         
+      case 'registrarAbono':
+        result = registrarAbono(data);
+        break;
+
+      case 'cerrarPrestamo':
+        result = cerrarPrestamo(data);
+        break;
+        
       case 'updateConfig':
         result = updateConfig(data);
         break;
 
       case 'verificarMultas':
         result = verificarYAplicarMultas();
+        break;
+
+      case 'configurarTriggers':
+        result = configurarTriggers();
         break;
         
       default:
@@ -802,13 +817,19 @@ function getPrestamosConNombres() {
   participantes.data.forEach(p => {
     mapParticipantes[p.id] = p.nombre;
   });
+
+  // Mapa de Fiadores para resolver nombres
+  const mapFiadores = {...mapParticipantes}; // Reutilizamos el mapa
   
   const dataConNombres = prestamos.data.map(p => {
     const participante = participantes.data.find(part => part.id === p.participante_id);
+    const nombreFiador = p.fiador_id ? (mapFiadores[p.fiador_id] || 'Desconocido') : 'No aplica';
+
     return {
       ...p,
       participante: participante ? participante.nombre : 'Desconocido',
-      telefono: participante ? participante.telefono : ''
+      telefono: participante ? participante.telefono : '',
+      nombre_fiador: nombreFiador
     };
   });
   
@@ -909,7 +930,7 @@ function agregarActividad(data) {
 // ==========================================
 
 /**
- * Crea un nuevo préstamo
+ * Crea un nuevo préstamo con validación de fiador
  * @param {Object} data - Datos del préstamo
  * @returns {Object} Resultado de la operación
  */
@@ -938,9 +959,36 @@ function agregarPrestamo(data) {
         return { status: 'error', message: 'El participante no está activo' };
       }
       
-      // Validar montos
+      // Validar montos y fiador
       const monto = Number(data.monto_prestado);
       const tasa = Number(data.tasa_interes);
+      const ahorroSolicitante = Number(participante.total_aportado || 0);
+
+      // Regla de Fiador: Si monto > ahorro, se requiere fiador
+      if (monto > ahorroSolicitante) {
+          if (!data.fiador_id) {
+              return { status: 'error', message: 'El monto excede sus ahorros. Debe asignar un fiador.' };
+          }
+          if (data.fiador_id === data.participante_id) {
+              return { status: 'error', message: 'El fiador no puede ser el mismo solicitante.' };
+          }
+
+          // Validar capacidad conjunta (Ahorro Solicitante + Ahorro Fiador >= Monto)
+          const fiador = findParticipante(data.fiador_id);
+          if (!fiador || !fiador.activo) {
+              return { status: 'error', message: 'El fiador seleccionado no es válido o está inactivo.' };
+          }
+
+          const ahorroFiador = Number(fiador.total_aportado || 0);
+          const capacidadTotal = ahorroSolicitante + ahorroFiador;
+
+          if (capacidadTotal < monto) {
+               return { 
+                   status: 'error', 
+                   message: `Capacidad insuficiente. Ahorro conjunto (${formatCurrency(capacidadTotal)}) es menor al préstamo.`
+               };
+          }
+      }
       
       if (isNaN(monto) || monto <= 0) {
         return { status: 'error', message: 'El monto debe ser mayor a cero' };
@@ -949,7 +997,7 @@ function agregarPrestamo(data) {
         return { status: 'error', message: 'La tasa debe estar entre 0 y 100' };
       }
       
-      // Calcular interés simple
+      // Calcular interés simple (Causación Inicial - NO es ganancia aún)
       const fechaPrestamo = new Date(data.fecha_prestamo);
       const fechaVencimiento = new Date(data.fecha_vencimiento);
       const diasDiferencia = (fechaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
@@ -968,7 +1016,8 @@ function agregarPrestamo(data) {
         interes,
         saldoPendiente,
         'ACTIVO',
-        new Date() // created_at
+        new Date(), // created_at
+        data.fiador_id || '' // Nuevo campo fiador
       ];
       
       sheet.appendRow(newRow);
@@ -1115,19 +1164,31 @@ function registrarPagoPrestamo(data) {
 
 /**
  * Calcula y distribuye las ganancias del ciclo
+ * AHORA BASADO EN MOVIMIENTOS REALES (Principio de Caja)
  */
 function calcularDistribucionGanancias() {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     
-    // 1. Calcular total intereses generados (TODOS LOS PRÉSTAMOS: ACTIVO, VENCIDO, PAGADO)
-    const prestamos = getData(HOJAS.PRESTAMOS);
+    // 1. Calcular total intereses RECAUDADOS (Desde Movimientos)
+    // Buscamos en la nueva tabla Movimientos_Prestamos
+    const sheetMovimientos = ss.getSheetByName('Movimientos_Prestamos');
     let totalIntereses = 0;
-    if (prestamos.status === 'success' && prestamos.data) {
-      totalIntereses = prestamos.data.reduce((sum, p) => {
-        // Incluir intereses de todos los préstamos, no solo los pagados
-        return sum + Number(p.interes_generado || 0);
-      }, 0);
+    
+    if (sheetMovimientos && sheetMovimientos.getLastRow() > 1) {
+        const dataMovimientos = sheetMovimientos.getDataRange().getValues();
+        // Index Check: id(0), prestamo_id(1), fecha(2), tipo(3), monto(4)
+        for(let i = 1; i < dataMovimientos.length; i++) {
+            const tipo = String(dataMovimientos[i][3]).trim().toUpperCase();
+            if (tipo === 'PAGO_INTERES') {
+                totalIntereses += Number(dataMovimientos[i][4]) || 0;
+            }
+        }
+    } else {
+        // FALLBACK LEGACY: Si no hay movimientos, ¿usamos la lógica antigua?
+        // El usuario pidió corregir el error contable. Si no hay movimientos de pago, la ganancia es 0.
+        // Esto es correcto según "El interés NO es ganancia al generarse".
+        totalIntereses = 0;
     }
     
     // 2. Calcular total actividades
@@ -1144,47 +1205,33 @@ function calcularDistribucionGanancias() {
     // 3. Obtener participantes
     const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
     const dataParticipantes = sheetParticipantes.getDataRange().getValues();
-    // Headers: id, nombre, cedula, telefono, email, total_aportado, ganancias, activo, fecha
     
-    // Índices (basados en inicializarBaseDatos)
-    // 0: id, 6: ganancias_acumuladas, 7: activo
-    
-    // Contar TODOS los participantes (no solo activos)
-    const totalParticipantes = dataParticipantes.length - 1; // -1 para excluir header
+    const totalParticipantes = dataParticipantes.length - 1;
     
     if (totalParticipantes === 0) {
         return { status: 'success', message: 'No hay participantes registrados' };
     }
     
-    // IMPORTANTE: Dividir entre TODOS los participantes, no solo los activos
     const gananciaPorPersona = Number((gananciaTotal / totalParticipantes).toFixed(2));
     const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
     
-    // 4. LIMPIEZA AGRESIVA: Eliminar TODO excepto el encabezado y las ganancias de POLLA
-    // Este enfoque garantiza que no queden distribuciones antiguas
+    // 4. LIMPIEZA AGRESIVA (Mantenemos lógica existente de redistribución total)
     const rowsG = sheetGanancias.getDataRange().getValues();
     
     if (rowsG.length > 1) {
-        const header = rowsG[0]; // Guardar encabezado
-        
-        // Filtrar SOLO las ganancias de POLLA (premios individuales)
+        const header = rowsG[0];
         const pollaEntries = [];
         for (let i = 1; i < rowsG.length; i++) {
             const tipo = String(rowsG[i][5] || '').trim().toUpperCase();
-            // Mantener solo POLLA, eliminar TODO lo demás (DISTRIBUCION y cualquier otra cosa)
             if (tipo === 'POLLA') {
                 pollaEntries.push(rowsG[i]);
             }
         }
         
-        // Limpiar COMPLETAMENTE la hoja
         sheetGanancias.clearContents();
         sheetGanancias.clearFormats();
-        
-        // Reescribir: primero el encabezado
         sheetGanancias.getRange(1, 1, 1, header.length).setValues([header]);
         
-        // Luego las entradas de POLLA (si existen)
         if (pollaEntries.length > 0) {
             sheetGanancias.getRange(2, 1, pollaEntries.length, pollaEntries[0].length).setValues(pollaEntries);
         }
@@ -1192,12 +1239,9 @@ function calcularDistribucionGanancias() {
 
     const fechaDist = new Date();
     
-    // 5. Aplicar nuevas distribuciones a TODOS los participantes (activos e inactivos)
-    // Ahora agregamos las nuevas distribuciones a la hoja limpia
+    // 5. Aplicar nuevas distribuciones
     for (let i = 1; i < dataParticipantes.length; i++) {
         const pId = dataParticipantes[i][0];
-        
-        // Distribuir a TODOS, sin importar si están activos o inactivos
         sheetGanancias.appendRow([
             generateId(),
             pId,
@@ -1209,16 +1253,13 @@ function calcularDistribucionGanancias() {
         ]);
     }
 
-    // Finalmente, actualizamos la tabla de participantes sumando TODO su historial de ganancias
-    // Las ganancias de POLLA son individuales y se suman solo al ganador
-    // Las ganancias de DISTRIBUCION son equitativas y se suman a todos los activos
+    // Actualizar participantes
     const actualizadasG = sheetGanancias.getDataRange().getValues();
     const mapGanancias = {};
     
     for (let j = 1; j < actualizadasG.length; j++) {
         const pId = actualizadasG[j][1];
         const monto = Number(actualizadasG[j][3] || 0);
-        // Sumar TODAS las ganancias (DISTRIBUCION + POLLA) para cada participante
         mapGanancias[pId] = (mapGanancias[pId] || 0) + monto;
     }
 
@@ -1230,12 +1271,12 @@ function calcularDistribucionGanancias() {
     
     return {
         status: 'success', 
-        message: 'Ganancias redistribuidas correctamente (reparto equitativo entre TODOS los participantes)',
+        message: 'Ganancias redistribuidas (Contabilidad de Caja)',
         data: {
             totalIntereses,
             totalActividades,
             gananciaTotal,
-            totalParticipantes: totalParticipantes,
+            totalParticipantes,
             gananciaPorPersona
         }
     };
@@ -1246,9 +1287,312 @@ function calcularDistribucionGanancias() {
 }
 
 /**
+ * Registra un abono a un préstamo
+ * Aplica prelación: Intereses acumulados -> Capital
+ */
+function registrarAbono(data) {
+    const { prestamo_id, monto } = data;
+    if (!prestamo_id || !monto || Number(monto) <= 0) {
+        return { status: 'error', message: 'Datos inválidos para el abono' };
+    }
+
+    return executeWithLock(() => {
+        try {
+            const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+            
+            // 1. Obtener Préstamo
+            const sheetPrestamos = ss.getSheetByName(HOJAS.PRESTAMOS);
+            const dataPrestamos = sheetPrestamos.getDataRange().getValues();
+            let rowPrestamo = -1;
+            let prestamo = null;
+
+            for(let i=1; i<dataPrestamos.length; i++) {
+                if(dataPrestamos[i][0] === prestamo_id) {
+                    rowPrestamo = i + 1;
+                    prestamo = {
+                        id: dataPrestamos[i][0],
+                        monto_prestado: Number(dataPrestamos[i][2]),
+                        interes_generado: Number(dataPrestamos[i][6]), // Total devengado histórico
+                        saldo_pendiente: Number(dataPrestamos[i][7]),
+                        estado: dataPrestamos[i][8]
+                    };
+                    break;
+                }
+            }
+
+            if (!prestamo) return { status: 'error', message: 'Préstamo no encontrado' };
+            if (prestamo.estado === 'PAGADO') return { status: 'error', message: 'El préstamo ya está PAGADO' };
+
+            // 2. Calcular Intereses YA pagados para saber cuánto se debe
+            const sheetMovimientos = ss.getSheetByName('Movimientos_Prestamos');
+            if(!sheetMovimientos) return { status: 'error', message: 'Error crítico: Tabla Movimientos no existe' };
+            
+            const dataMovimientos = sheetMovimientos.getDataRange().getValues();
+            let interesesPagados = 0;
+            // Index Check Movimientos: id, prestamo_id, fecha, tipo, monto
+            for(let i=1; i<dataMovimientos.length; i++) {
+                if(dataMovimientos[i][1] === prestamo_id && dataMovimientos[i][3] === 'PAGO_INTERES') {
+                    interesesPagados += Number(dataMovimientos[i][4]);
+                }
+            }
+
+            const interesPendiente = prestamo.interes_generado - interesesPagados;
+            // Asegurar no negativos por inconsistencias flotantes
+            const deudaInteres = Math.max(0, interesPendiente); 
+
+            // 3. Distribuir el Abono
+            let disponible = Number(monto);
+            let pagoInteres = 0;
+            let pagoCapital = 0;
+
+            // A) Pagar Intereses
+            if (deudaInteres > 0) {
+                pagoInteres = Math.min(disponible, deudaInteres);
+                disponible -= pagoInteres;
+            }
+
+            // B) Pagar Capital (solo si sobra)
+            if (disponible > 0) {
+                pagoCapital = disponible;
+            }
+
+            // 4. Registrar Movimientos
+            if (pagoInteres > 0) {
+                sheetMovimientos.appendRow([
+                    generateId(),
+                    prestamo_id,
+                    new Date(),
+                    'PAGO_INTERES',
+                    pagoInteres,
+                    prestamo.monto_prestado, // El capital nominal no cambia referencialmente para calculos, pero quizas deberiamos guardar saldo resultante?
+                    // Dejemos saldo_resultante_capital como referencia
+                    prestamo.saldo_pendiente - pagoInteres // Temporal logic
+                ]);
+            }
+
+            if (pagoCapital > 0) {
+                sheetMovimientos.appendRow([
+                    generateId(),
+                    prestamo_id,
+                    new Date(),
+                    'ABONO',
+                    pagoCapital,
+                    prestamo.saldo_pendiente - pagoInteres - pagoCapital,
+                    0
+                ]);
+            }
+
+            // 5. Actualizar Saldos en Préstamo
+            const nuevoSaldo = prestamo.saldo_pendiente - monto;
+            const nuevoSaldoFinal = Math.max(0, nuevoSaldo); // Seguridad
+
+            sheetPrestamos.getRange(rowPrestamo, 8).setValue(nuevoSaldoFinal);
+
+            // Validar si queda en 0 para cambio de estado visual (aunque cierre es manual)
+            // El usuario dijo "El préstamo queda pendiente de acción humana". No cambiamos a PAGADO autom.
+            
+            // Recalcular ganancias si hubo pago de interés
+            if (pagoInteres > 0) {
+                calcularDistribucionGanancias();
+            }
+
+            return { 
+                status: 'success', 
+                message: 'Abono registrado con éxito',
+                distribucion: { interes: pagoInteres, capital: pagoCapital, saldo_restante: nuevoSaldoFinal }
+            };
+
+        } catch (error) {
+            return { status: 'error', message: `Error en abono: ${error.message}` };
+        }
+    });
+}
+
+/**
+ * Cierra manualmente un préstamo
+ * Requisito: Saldo debe ser 0
+ */
+function cerrarPrestamo(data) {
+    const { prestamo_id } = data;
+    return executeWithLock(() => {
+        try {
+            const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+            const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
+            const rows = sheet.getDataRange().getValues();
+            
+            let rowIndex = -1;
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][0] === prestamo_id) {
+                    rowIndex = i + 1;
+                    break;
+                }
+            }
+
+            if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
+
+            const saldo = Number(rows[rowIndex-1][7]);
+            if (saldo > 0) {
+                return { status: 'error', message: `No se puede cerrar. Saldo pendiente: ${formatCurrency(saldo)}` };
+            }
+
+            // Cerrar
+            sheet.getRange(rowIndex, 9).setValue('PAGADO');
+            
+            return { status: 'success', message: 'Préstamo cerrado correctamente.' };
+
+        } catch(error) {
+            return { status: 'error', message: error.message };
+        }
+    });
+}
+
+/**
+ * Obtiene el historial de movimientos de un préstamo
+ */
+function getMovimientosPrestamo(prestamoId) {
+    const movimientos = getData('Movimientos_Prestamos');
+    if (movimientos.status !== 'success') return { status: 'success', data: [] }; // Si no existe tabla, retorna vacio
+
+    const filtrados = movimientos.data.filter(m => m.prestamo_id === prestamoId);
+    // Ordenar por fecha desc
+    filtrados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    return { status: 'success', data: filtrados };
+}
+
+/**
+ * MOTOR DE CAUSACIÓN AUTOMÁTICA DE INTERESES
+ * Calcula intereses diarios y cambia estados a MORA
+ * DEBE EJECUTARSE DIARIAMENTE (Trigger configurado)
+ */
+function motorCausacionInteres() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheetPrestamos = ss.getSheetByName(HOJAS.PRESTAMOS);
+    const sheetMovimientos = ss.getSheetByName('Movimientos_Prestamos');
+    
+    if (!sheetPrestamos) {
+      Logger.log('Error: Hoja Prestamos no encontrada');
+      return { status: 'error', message: 'Hoja Prestamos no encontrada' };
+    }
+
+    // Si no existe la hoja de movimientos, no hacer nada (sistema no inicializado)
+    if (!sheetMovimientos) {
+      Logger.log('Advertencia: Hoja Movimientos_Prestamos no existe. Ejecute inicializarBaseDatos primero.');
+      return { status: 'error', message: 'Sistema no inicializado. Ejecute Inicializar BD primero.' };
+    }
+
+    const dataPrestamos = sheetPrestamos.getDataRange().getValues();
+    // Headers: id(0), participante_id(1), monto(2), tasa(3), fecha(4), venc(5), int_gen(6), saldo(7), estado(8), created(9), fiador(10)
+    
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+
+    let cambios = 0;
+    let prestamosActualizados = [];
+
+    for (let i = 1; i < dataPrestamos.length; i++) {
+      const pId = dataPrestamos[i][0];
+      const monto = Number(dataPrestamos[i][2]);
+      const tasa = Number(dataPrestamos[i][3]);
+      const fechaVenc = new Date(dataPrestamos[i][5]);
+      let intGenerado = Number(dataPrestamos[i][6]);
+      let saldo = Number(dataPrestamos[i][7]);
+      let estado = String(dataPrestamos[i][8]).toUpperCase();
+
+      // Solo procesar ACTIVO o MORA con deuda pendiente
+      if ((estado === 'ACTIVO' || estado === 'MORA') && saldo > 0) {
+        
+        // 1. Calcular Interés Diario
+        // Fórmula: (Capital * TasaMensual / 100) / 30
+        const interesDiario = (monto * (tasa / 100)) / 30;
+        
+        // Ajuste de precisión
+        const intDiarioRedondeado = Math.round(interesDiario * 100) / 100;
+
+        if (intDiarioRedondeado > 0) {
+          // Actualizar acumuladores
+          intGenerado += intDiarioRedondeado;
+          saldo += intDiarioRedondeado;
+
+          // Calcular saldos teóricos para el registro
+          const capitalPendiente = saldo - intGenerado;
+
+          // Registrar Movimiento (Contable)
+          sheetMovimientos.appendRow([
+            generateId(),
+            pId,
+            new Date(),
+            'CAUSACION_INTERES',
+            intDiarioRedondeado,
+            capitalPendiente,
+            intGenerado,
+            new Date()
+          ]);
+
+          // Actualizar fila en Prestamos
+          sheetPrestamos.getRange(i + 1, 7).setValue(intGenerado); // Columna G (Interes)
+          sheetPrestamos.getRange(i + 1, 8).setValue(saldo);       // Columna H (Saldo)
+          
+          cambios++;
+          prestamosActualizados.push(pId);
+        }
+
+        // 2. Verificar Vencimiento (Cambio a MORA)
+        if (estado === 'ACTIVO' && fechaVenc < hoy) {
+          sheetPrestamos.getRange(i + 1, 9).setValue('MORA');
+          Logger.log(`Préstamo ${pId} pasó a MORA.`);
+        }
+      }
+    }
+    
+    Logger.log(`Motor finalizado. ${cambios} préstamos procesados.`);
+    return { 
+      status: 'success', 
+      message: `Motor ejecutado: ${cambios} préstamos actualizados`,
+      prestamos_actualizados: prestamosActualizados
+    };
+
+  } catch (error) {
+    Logger.log('Error en motorCausacionInteres: ' + error.message);
+    return { status: 'error', message: 'Error en motor: ' + error.message };
+  }
+}
+
+/**
+ * Configura el trigger diario para el motor de interés
+ * Ejecutar UNA SOLA VEZ manualmente desde el frontend o desde el editor de scripts
+ */
+function configurarTriggers() {
+  try {
+    // Eliminar triggers existentes para evitar duplicados
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(t => {
+      if (t.getHandlerFunction() === 'motorCausacionInteres') {
+        ScriptApp.deleteTrigger(t);
+      }
+    });
+
+    // Crear nuevo trigger: Diario a la 1:00 AM
+    ScriptApp.newTrigger('motorCausacionInteres')
+      .timeBased()
+      .everyDays(1)
+      .atHour(1)
+      .create();
+
+    Logger.log('Trigger configurado correctamente');
+    return { status: 'success', message: 'Trigger configurado correctamente (Diario 1:00 AM)' };
+  } catch (error) {
+    Logger.log('Error al configurar trigger: ' + error.message);
+    return { status: 'error', message: 'Error al configurar trigger: ' + error.message };
+  }
+}
+
+/**
  * Gestiona estados de participantes (Liquidar, Eliminar)
  */
 function gestionarParticipante(data) {
+
     if (!data.id || !data.tipoAccion) {
         return { status: 'error', message: 'Faltan datos requeridos (id, tipoAccion)' };
     }
@@ -1627,8 +1971,9 @@ function inicializarBaseDatos() {
       'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia', 'frecuencia_pago', 'config_pago'],
       'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora'],
       'Actividades': ['id', 'nombre', 'descripcion', 'monto_generado', 'fecha', 'responsable', 'estado', 'created_at'],
-      'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at'],
-      'Pagos_Intereses': ['id', 'prestamo_id', 'monto_interes', 'fecha_pago', 'estado', 'created_at'],
+      'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at', 'fiador_id'],
+      'Movimientos_Prestamos': ['id', 'prestamo_id', 'fecha', 'tipo', 'monto', 'saldo_resultante_capital', 'saldo_resultante_interes', 'created_at'], // NUEVA TABLA
+      'Pagos_Intereses': ['id', 'prestamo_id', 'monto_interes', 'fecha_pago', 'estado', 'created_at'], // (Legacy) Se mantendrá por compatibilidad histórica
       'Ganancias_Distribuidas': ['id', 'participante_id', 'actividad_id', 'monto_ganancia', 'fecha_distribucion', 'tipo', 'created_at'],
       'Ciclos': ['id', 'nombre', 'fecha_inicio', 'fecha_cierre', 'total_recaudado', 'total_ganancias', 'total_intereses', 'estado', 'created_at'],
       'Polla_Numeros': ['id_participante', 'numero', 'fecha_asignacion', 'pagado'],
@@ -1653,14 +1998,15 @@ function inicializarBaseDatos() {
           sheet.appendRow(['DIAS_PAGO', '15,30', 'Días hábiles para pago sin mora (separados por coma)']);
         }
       } else {
-        // Verificar si faltan columnas y agregarlas (Migración suave)
+        // Verificar si faltan columnas y agregarlas (Migración suave - NO DESTRUCTIVA)
         const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         const targetHeaders = hojas[nombreHoja];
         
         targetHeaders.forEach((header, index) => {
           if (!currentHeaders.includes(header)) {
+            // Agregar al final
             sheet.getRange(1, currentHeaders.length + 1).setValue(header);
-            currentHeaders.push(header);
+            currentHeaders.push(header); // Actualizar lista local para siguientes iteraciones
             mensajes.push(`Columna '${header}' agregada a la hoja '${nombreHoja}'`);
           }
         });
@@ -1704,8 +2050,9 @@ function inicializarBaseDatos() {
 function corregirBaseDatos() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const hojas = {
-    'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia'],
-    'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora']
+    'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia', 'frecuencia_pago', 'config_pago'],
+    'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora'],
+    'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at', 'fiador_id']
   };
 
   const resultados = [];
@@ -1717,12 +2064,12 @@ function corregirBaseDatos() {
       const nuevosHeaders = hojas[nombreHoja];
       
       // Solo actualizamos si faltan columnas
-      if (headersActuales.length < nuevosHeaders.length) {
-        sheet.getRange(1, 1, 1, nuevosHeaders.length).setValues([nuevosHeaders]);
-        resultados.push(`✅ Hoja '${nombreHoja}' actualizada con nuevos encabezados.`);
-      } else {
-        resultados.push(`ℹ️ Hoja '${nombreHoja}' ya tiene los encabezados completos.`);
-      }
+      nuevosHeaders.forEach(header => {
+         if (!headersActuales.includes(header)) {
+             sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
+             resultados.push(`✅ Columna '${header}' agregada a '${nombreHoja}'.`);
+         }
+      });
     }
   });
 

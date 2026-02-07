@@ -1,10 +1,12 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Natillera</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 
@@ -104,6 +106,24 @@
                         <div class="stat-content">
                             <h3 class="stat-label">Total Ganancias</h3>
                             <p class="stat-value" id="totalGanancias">$0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Acciones Rápidas</h2>
+                    </div>
+                    <div class="card-body">
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+
+                            <button class="btn btn-warning" onclick="recalcularGananciasManual()">
+                                <i class="fas fa-sync-alt"></i> Recalcular Ganancias
+                            </button>
+                            <button class="btn btn-secondary" onclick="activarMotorIntereses()">
+                                <i class="fas fa-robot"></i> Activar Motor Intereses
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -962,8 +982,74 @@
         </div>
     </div>
 
+    <!-- Modal Detalle Préstamo (Abonos, Historial, Cierre) -->
+    <div class="modal fade" id="modalDetallePrestamo" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title">Detalle del Préstamo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="detallePrestamoId">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-md-3"><small class="text-muted">Capital Original</small>
+                                    <h5 id="detalleMontoOriginal"> <!-- Scripts --></h5>
+                                </div>
+                                <div class="col-md-3"><small class="text-muted">Saldo Pendiente</small>
+                                    <h5 id="detalleSaldoPendiente" class="text-primary"> <!-- Scripts --></h5>
+                                </div>
+                                <div class="col-md-3"><small class="text-muted">Interés Generado</small>
+                                    <h5 id="detalleInteres"> <!-- Scripts --></h5>
+                                </div>
+                                <div class="col-md-3"><small class="text-muted">Estado</small><br><span
+                                        id="detalleEstado" class="badge bg-secondary">--</span></div>
+                            </div>
+                            <div class="mt-2 text-center text-muted fst-italic"><small id="detalleFiadorInfo">Fiador: No
+                                    asignado</small></div>
+                        </div>
+                    </div>
+                    <div class="card mb-3 border-success" id="seccionAbonar">
+                        <div class="card-header bg-success text-white">Realizar Abono</div>
+                        <div class="card-body">
+                            <div class="input-group"><span class="input-group-text">$</span>
+                                <input type="number" class="form-control" id="montoAbono" placeholder="Monto a abonar">
+                                <button class="btn btn-success" type="button" onclick="realizarAbono()">Registrar
+                                    Abono</button>
+                            </div>
+                            <small class="text-muted">El abono cubrirá primero intereses pendientes y luego
+                                capital.</small>
+                        </div>
+                    </div>
+                    <h6>Historial de Movimientos</h6>
+                    <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Tipo</th>
+                                    <th>Monto</th>
+                                    <th>Detalle</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaMovimientosBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-danger" id="btnCerrarPrestamo" onclick="cerrarPrestamoUI()"
+                        style="display:none;"><i class="fas fa-lock"></i> Cerrar Préstamo (Manual)</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar Ventana</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="js/auth.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/app.js"></script>
     <script>

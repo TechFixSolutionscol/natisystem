@@ -207,6 +207,28 @@
 
     /**
      * Carga la lista de participantes
+    /**
+     * Activa el motor de causación diaria de intereses
+     */
+    window.activarMotorIntereses = async function () {
+        if (!confirm('Esta acción activará el cálculo automático de intereses DIARIO (1:00 AM). ¿Desea continuar?')) return;
+
+        try {
+            const result = await sendDataToBackend({ action: 'configurarTriggers' });
+
+            if (result.status === 'success') {
+                alert('✅ Motor Activado: ' + result.message);
+            } else {
+                alert('❌ Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error al conectar con el servidor.');
+        }
+    };
+
+    /**
+     * Carga la lista de participantes
      */
     async function loadParticipantes() {
         try {
@@ -709,6 +731,7 @@
 
             // Cargar participantes en el select primero
             await loadParticipantesSelect('prestamoParticipante');
+            await loadParticipantesSelect('prestamoFiador'); // Cargar selector de fiadores también
 
             const response = await fetch(`${API_URL}?action=getPrestamos`);
             const result = await response.json();
@@ -769,11 +792,13 @@
                     </span>
                 </td>
                 <td class="table-actions">
+                    <button class="btn btn-sm btn-primary" onclick="abrirDetallePrestamo('${p.id}')" title="Ver Detalle y Abonos">
+                        <i class="fas fa-eye"></i> Ver / Pagar
+                    </button>
                     ${p.estado !== 'PAGADO' ? `
-                        <button class="btn btn-sm btn-success" onclick="liquidarPrestamoUI('${p.id}')" title="Pagar completo">💰 Pagar</button>
                         <button class="btn btn-sm btn-info" onclick="abrirModalVencimiento('${p.id}', '${p.fecha_vencimiento}')" title="Modificar fecha">📅</button>
                         <button class="btn btn-sm btn-whatsapp" onclick="enviarRecordatorioWhatsApp('${p.participante}', '${p.telefono}', '${p.monto_prestado}', '${p.interes_generado}', '${p.fecha_vencimiento}')" title="Recordatorio WhatsApp">📱</button>
-                    ` : '<span class="text-muted">Liquidado</span>'}
+                    ` : '<span class="badge bg-success">PAZ Y SALVO</span>'}
                 </td>
             </tr>
         `).join('');
@@ -2136,7 +2161,7 @@
                         `Intereses: ${formatCurrency(data.totalIntereses)}\n` +
                         `Actividades: ${formatCurrency(data.totalActividades)}\n` +
                         `Total a Repartir: ${formatCurrency(data.gananciaTotal)}\n` +
-                        `Participantes Activos: ${data.participantesActivos}\n` +
+                        `Participantes Activos: ${data.totalParticipantes}\n` +
                         `--------------------------------\n` +
                         `Ganancia por Persona: ${formatCurrency(data.gananciaPorPersona)}`);
                 }
@@ -2501,5 +2526,218 @@
     window.applyParticipantFilters = applyParticipantFilters;
     window.applyAporteFilters = applyAporteFilters;
     window.applyPrestamoFilters = applyPrestamoFilters;
+
+    // ==========================================
+    // 8. GESTIÓN AVANZADA DE PRÉSTAMOS (Fase 2)
+    // ==========================================
+
+    /**
+     * Abre el modal de detalle del préstamo
+     */
+    window.abrirDetallePrestamo = async function (prestamoId) {
+        // Buscar el préstamo en memoria local
+        const prestamo = allPrestamos.find(p => p.id === prestamoId);
+        if (!prestamo) return;
+
+        // Llenar datos básicos
+        document.getElementById('detallePrestamoId').value = prestamo.id;
+        document.getElementById('detalleMontoOriginal').textContent = formatCurrency(prestamo.monto_prestado);
+        document.getElementById('detalleSaldoPendiente').textContent = formatCurrency(prestamo.saldo_pendiente);
+        document.getElementById('detalleInteres').textContent = formatCurrency(prestamo.interes_generado);
+        document.getElementById('detalleEstado').textContent = prestamo.estado;
+        document.getElementById('detalleEstado').className = `badge ${getBadgeClass(prestamo.estado)}`;
+
+        const infoFiador = document.getElementById('detalleFiadorInfo');
+        if (prestamo.nombre_fiador && prestamo.nombre_fiador !== 'No aplica') {
+            infoFiador.textContent = `Fiador: ${prestamo.nombre_fiador}`;
+            infoFiador.classList.add('text-primary', 'fw-bold');
+        } else {
+            infoFiador.textContent = 'Fiador: No asignado';
+            infoFiador.classList.remove('text-primary', 'fw-bold');
+        }
+
+        // Mostrar botón de cierre solo si saldo es 0
+        const btnCerrar = document.getElementById('btnCerrarPrestamo');
+        if (Number(prestamo.saldo_pendiente) <= 0 && prestamo.estado !== 'PAGADO') {
+            btnCerrar.style.display = 'inline-block';
+        } else {
+            btnCerrar.style.display = 'none';
+        }
+
+        // Ocultar sección de abono si ya está pagado
+        const seccionAbono = document.getElementById('seccionAbonar');
+        if (prestamo.estado === 'PAGADO') {
+            seccionAbono.style.display = 'none';
+        } else {
+            seccionAbono.style.display = 'block';
+        }
+
+        // Cargar movimientos desde Backend
+        const tbody = document.getElementById('tablaMovimientosBody');
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Cargando historial...</td></tr>';
+
+        try {
+            const result = await sendDataToBackend({
+                action: 'getMovimientosPrestamo', // GET usually via params but we use unified helper if possible or fetch
+                prestamo_id: prestamoId
+            }, 'GET'); // Helper doesn't exist for GET with params easily in sendDataToBackend usually POST. Let's use fetch directly.
+
+            // Correction: sendDataToBackend is POST. We defined getMovimientosPrestamo in doGet.
+            const response = await fetch(`${API_URL}?action=getMovimientosPrestamo&prestamo_id=${prestamoId}`);
+            const resultMov = await response.json();
+
+            if (resultMov.status === 'success') {
+                renderMovimientos(resultMov.data);
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error cargando movimientos</td></tr>';
+            }
+        } catch (error) {
+            console.error(error);
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error de conexión</td></tr>';
+        }
+
+        // Mostrar Modal
+        const modal = new bootstrap.Modal(document.getElementById('modalDetallePrestamo'));
+        modal.show();
+    };
+
+    function renderMovimientos(movimientos) {
+        const tbody = document.getElementById('tablaMovimientosBody');
+        if (movimientos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Sin movimientos registrados</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = movimientos.map(m => `
+            <tr>
+                <td>${formatDate(m.fecha)}</td>
+                <td><span class="badge ${m.tipo === 'PAGO_INTERES' ? 'bg-warning text-dark' : 'bg-success'}">${m.tipo}</span></td>
+                <td>${formatCurrency(m.monto)}</td>
+                <td><small>${m.tipo === 'PAGO_INTERES' ? 'Interés' : 'Capital'}</small></td>
+            </tr>
+        `).join('');
+    }
+
+    /**
+     * Realiza un abono al préstamo actual
+     */
+    window.realizarAbono = async function () {
+        const prestamoId = document.getElementById('detallePrestamoId').value;
+        const monto = document.getElementById('montoAbono').value;
+
+        if (!monto || monto <= 0) {
+            alert('Ingrese un monto válido');
+            return;
+        }
+
+        if (!confirm(`¿Confirmas el abono de ${formatCurrency(monto)}?`)) return;
+
+        try {
+            const result = await sendDataToBackend({
+                action: 'registrarAbono',
+                prestamo_id: prestamoId,
+                monto: monto
+            });
+
+            if (result.status === 'success') {
+                alert(`✅ Abono registrado.\n\nDistribución:\nInterés: ${formatCurrency(result.distribucion.interes)}\nCapital: ${formatCurrency(result.distribucion.capital)}`);
+
+                document.getElementById('montoAbono').value = '';
+                // Recargar modal y lista
+                loadPrestamos();
+                // Cerrar modal actual y reabrirlo actualizado (o simplemente actualizar datos visuales)
+                // Por simplicidad, cerramos y el usuario puede volver a abrir
+                const modalEl = document.getElementById('modalDetallePrestamo');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                modal.hide();
+            } else {
+                alert('❌ Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error de conexión');
+        }
+    };
+
+    /**
+     * Cierra manualmente el préstamo
+     */
+    window.cerrarPrestamoUI = async function () {
+        const prestamoId = document.getElementById('detallePrestamoId').value;
+        if (!confirm('¿Estás seguro de CERRAR este préstamo? Esta acción es irreversible.')) return;
+
+        try {
+            const result = await sendDataToBackend({
+                action: 'cerrarPrestamo',
+                prestamo_id: prestamoId
+            });
+
+            if (result.status === 'success') {
+                alert('✅ Préstamo CERRADO correctamente.');
+                const modalEl = document.getElementById('modalDetallePrestamo');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                modal.hide();
+                loadPrestamos();
+            } else {
+                alert('❌ Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error de conexión');
+        }
+    };
+
+    /**
+     * Verifica si se requiere fiador en el formulario
+     */
+    window.verificarNecesidadFiador = async function () {
+        const monto = parseFloat(document.getElementById('prestamoMonto').value) || 0;
+        const participanteId = document.getElementById('prestamoParticipante').value;
+        const alerta = document.getElementById('alertaFiador');
+        const selectFiador = document.getElementById('prestamoFiador');
+
+        if (!participanteId) return;
+
+        // Obtener info del participante (podríamos optimizar con cache)
+        // Por ahora, asumimos que tenemos la lista de participantes cargada en memoria si la necesitamos, 
+        // pero `loadParticipantesSelect` solo carga el select.
+        // Haremos un fetch rápido o buscaremos si ya tenemos 'allParticipantes' (no definido globalmente aun).
+        // Mejor opción: obtener total_aportado del backend o guardarlo en dataset del option.
+
+        // Estrategia: Fetch único de participantes para tener data completa
+        try {
+            const response = await fetch(`${API_URL}?action=getParticipantes`);
+            const result = await response.json();
+            const socio = result.data.find(p => p.id === participanteId);
+
+            if (socio) {
+                const ahorro = Number(socio.total_aportado || 0);
+                if (monto > ahorro) {
+                    alerta.style.display = 'block';
+                    alerta.innerHTML = `<i class="fas fa-exclamation-circle"></i> El monto (${formatCurrency(monto)}) supera sus ahorros (${formatCurrency(ahorro)}). <b>Se requiere Fiador.</b>`;
+                    selectFiador.setAttribute('required', 'true');
+                } else {
+                    alerta.style.display = 'none';
+                    selectFiador.removeAttribute('required');
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // Vincular al cambio de participante también
+    const pSelect = document.getElementById('prestamoParticipante');
+    if (pSelect) {
+        pSelect.addEventListener('change', verificarNecesidadFiador);
+        // También cargar lista de fiadores cuando se carga la página (clona la lista de participantes)
+    }
+
+    // Función para poblar el Fiador (reutiliza la de participantes)
+    // Se llamará en `loadPrestamos`
+
+    window.populateFiadorSelect = async function () {
+        await loadParticipantesSelect('prestamoFiador');
+    };
 
 })();
