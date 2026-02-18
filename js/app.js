@@ -1047,63 +1047,116 @@
     // ==========================================
 
     /**
-     * Carga y aplica la configuración global
+     * Carga la configuración global (Método de Distribución)
      */
     async function loadGlobalConfig() {
         try {
+            const selectMetodo = document.getElementById('configMetodoDistribucion');
+            if (selectMetodo) selectMetodo.disabled = true;
+
             const response = await fetch(`${API_URL}?action=getConfig`);
             const result = await response.json();
+
             if (result.status === 'success') {
-                GLOBAL_CONFIG = result.data;
-                // Rellenar formulario de ajustes
-                const inputMin = document.getElementById('configAporteMinimo');
-                const inputMora = document.getElementById('configMoraDiaria');
-                const inputDias = document.getElementById('configDiasPago');
+                const config = result.data;
 
-                if (inputMin) inputMin.value = GLOBAL_CONFIG.APORTE_MINIMO;
-                if (inputMora) inputMora.value = GLOBAL_CONFIG.MORA_DIARIA;
-                if (inputDias) inputDias.value = GLOBAL_CONFIG.DIAS_PAGO;
+                // Cargar Método de Distribución
+                if (selectMetodo) {
+                    selectMetodo.value = config.METODO_DISTRIBUCION || 'EQUITATIVA';
+                    selectMetodo.disabled = false;
+                    updateMetodoDescription();
+                }
 
-                console.log('Configuración global cargada:', GLOBAL_CONFIG);
+                // Preservar carga de otras configs si existen campos (legacy safety)
+                if (document.getElementById('configAporteMinimo'))
+                    document.getElementById('configAporteMinimo').value = config.APORTE_MINIMO || GLOBAL_CONFIG.APORTE_MINIMO;
+
+            } else {
+                console.error('Error al cargar config:', result.message);
             }
         } catch (error) {
-            console.error('Error al cargar configuración:', error);
+            console.error('Error al cargar config:', error);
         }
     }
 
     /**
-     * Maneja el envío del formulario de configuración
+     * Actualiza la descripción visual del método seleccionado
      */
-    async function handleConfigSubmit(e) {
-        e.preventDefault();
-        const btn = document.getElementById('btnGuardarConfig');
-        btn.disabled = true;
-        btn.textContent = 'Guardando...';
+    function updateMetodoDescription() {
+        const select = document.getElementById('configMetodoDistribucion');
+        if (!select) return;
 
-        const data = {
+        const descDiv = document.getElementById('descMetodo');
+        const panelManual = document.getElementById('panelManualConfig');
+        const metodo = select.value;
+
+        let texto = '';
+        let icono = '';
+
+        if (metodo === 'EQUITATIVA') {
+            icono = '<i class="fas fa-users"></i>';
+            texto = '<strong>Equitativa:</strong> La ganancia total se divide en partes iguales entre todos los socios activos.';
+            if (panelManual) panelManual.style.display = 'none';
+        } else if (metodo === 'PROPORCIONAL') {
+            icono = '<i class="fas fa-chart-pie"></i>';
+            texto = '<strong>Proporcional:</strong> La ganancia se reparte según el % de aporte de cada socio.';
+            if (panelManual) panelManual.style.display = 'none';
+        } else if (metodo === 'MANUAL') {
+            icono = '<i class="fas fa-hand-holding-usd"></i>';
+            texto = '<strong>Manual:</strong> Se respetan los porcentajes fijos definidos en el reglamento.';
+            if (panelManual) panelManual.style.display = 'block';
+        }
+
+        if (descDiv) {
+            descDiv.innerHTML = `${icono} ${texto}`;
+            descDiv.className = metodo === 'MANUAL' ? 'alert alert-warning' : 'alert alert-info';
+        }
+    }
+
+    /**
+     * Guarda la configuración de distribución
+     */
+    async function saveGlobalConfig(e) {
+        e.preventDefault();
+
+        const btn = document.getElementById('btnGuardarConfigDistribucion');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳ Guardando...';
+        }
+
+        const metodo = document.getElementById('configMetodoDistribucion').value;
+
+        const configData = {
             action: 'updateConfig',
-            APORTE_MINIMO: document.getElementById('configAporteMinimo').value,
-            MORA_DIARIA: document.getElementById('configMoraDiaria').value,
-            DIAS_PAGO: document.getElementById('configDiasPago').value
+            METODO_DISTRIBUCION: metodo
         };
 
         try {
-            const result = await sendDataToBackend(data);
+            // Usar sendDataToBackend o fetch con JSON stringify
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8' // Text/plain evita CORS complex preflight en Apps Script
+                },
+                body: JSON.stringify(configData)
+            });
+
+            const result = await response.json();
+
             if (result.status === 'success') {
-                alert('✅ Configuración actualizada globalmente');
-                GLOBAL_CONFIG.APORTE_MINIMO = data.APORTE_MINIMO;
-                GLOBAL_CONFIG.MORA_DIARIA = data.MORA_DIARIA;
-                GLOBAL_CONFIG.DIAS_PAGO = data.DIAS_PAGO;
-                loadDashboardData(); // Refrescar por si acaso
+                alert('✅ Método de distribución actualizado a: ' + metodo);
             } else {
-                alert('❌ ' + result.message);
+                alert('❌ Error: ' + result.message);
             }
         } catch (error) {
-            console.error('Error al actualizar config:', error);
+            console.error('Error:', error);
             alert('❌ Error de conexión');
         } finally {
-            btn.disabled = false;
-            btn.textContent = '💾 Guardar Configuración';
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '💾 Guardar Método de Distribución';
+            }
         }
     }
 
@@ -1112,8 +1165,13 @@
      */
     function setupForms() {
         // Formulario de Ajustes Globales
-        const configForm = document.getElementById('formConfigGlobal');
-        if (configForm) configForm.addEventListener('submit', handleConfigSubmit);
+        // Formulario de Ajustes (Distribución)
+        const configForm = document.getElementById('formConfigDistribucion');
+        if (configForm) configForm.addEventListener('submit', saveGlobalConfig);
+
+        // Listener para cambio de método (para UX inmediata)
+        const selectMetodo = document.getElementById('configMetodoDistribucion');
+        if (selectMetodo) selectMetodo.addEventListener('change', updateMetodoDescription);
 
         // Gestión de Participantes
         const btnAgregarP = document.getElementById('btnAgregarParticipante');
@@ -2738,6 +2796,45 @@
 
     window.populateFiadorSelect = async function () {
         await loadParticipantesSelect('prestamoFiador');
+    };
+
+    /**
+     * Llama al backend para reparar moras masivas (-3000)
+     */
+    window.repararMorasUI = async function () {
+        if (!confirm('⚠️ ¿Estás seguro de ejecutar la corrección masiva de moras?\n\nEsto eliminará TODOS los aportes negativos de $3,000 y actividades de mora automática.\n\nÚselo solo si el sistema cobró erróneamente.')) return;
+
+        try {
+            const btn = document.querySelector('button[onclick="repararMorasUI()"]');
+            const originalText = btn ? btn.innerHTML : 'Reparar';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Reparando...';
+            }
+
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'repararMoras' })
+            });
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                alert('✅ Corrección realizada:\n' + result.message);
+                loadDashboardData(); // Refrescar totales
+            } else {
+                alert('❌ Error: ' + result.message);
+            }
+
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+
+        } catch (error) {
+            console.error(error);
+            alert('❌ Error de conexión al intentar reparar.');
+        }
     };
 
 })();

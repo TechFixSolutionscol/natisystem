@@ -409,41 +409,59 @@
                 </div>
             </section>
 
-            <!-- Sección de Ajustes (Globales) -->
+            <!-- Sección de Configuración de Distribución -->
             <section id="config" class="content-section">
                 <header class="section-header">
-                    <h1><i class="fas fa-cog"></i> Ajustes del Sistema</h1>
-                    <p class="section-subtitle">Configuración general para todos los socios y aportes.</p>
+                    <h1><i class="fas fa-cog"></i> Configuración de Distribución</h1>
+                    <p class="section-subtitle">Defina cómo se repartirán las utilidades entre los socios.</p>
                 </header>
 
-                <div class="card" style="max-width: 600px;">
+                <div class="card" style="max-width: 800px;">
                     <div class="card-header">
-                        <h2>Reglas de Negocio</h2>
+                        <h2>Método de Distribución de Ganancias</h2>
                     </div>
                     <div class="card-body">
-                        <form id="formConfigGlobal" class="form-grid">
+                        <form id="formConfigDistribucion" class="form-grid">
                             <div class="form-group full-width">
-                                <label for="configAporteMinimo">Aporte Mínimo Mensual ($) *</label>
-                                <input type="number" id="configAporteMinimo" min="0" step="1000" placeholder="Ej: 30000"
-                                    required>
-                                <small class="text-muted">Monto mínimo que todo socio debe ahorrar al mes.</small>
+                                <label for="configMetodoDistribucion">Seleccione el Método *</label>
+                                <select id="configMetodoDistribucion" required
+                                    style="padding: 15px; font-size: 1.1rem;">
+                                    <option value="EQUITATIVA">🟢 Equitativa (Igual para todos)</option>
+                                    <option value="PROPORCIONAL">📈 Proporcional al Ahorro (Recomendado)</option>
+                                    <option value="MANUAL">🖐️ Porcentaje Manual (Reglamento Interno)</option>
+                                </select>
+                                <div id="descMetodo" class="alert alert-info" style="margin-top: 15px;">
+                                    <i class="fas fa-info-circle"></i> <strong>Equitativa:</strong> La ganancia total se
+                                    divide en partes iguales entre todos los socios activos, sin importar cuánto
+                                    ahorraron. ideal para natilleras familiares.
+                                </div>
                             </div>
-                            <div class="form-group full-width">
-                                <label for="configMoraDiaria">Valor Mora Diaria ($) *</label>
-                                <input type="number" id="configMoraDiaria" min="0" step="100" placeholder="Ej: 3000"
-                                    required>
-                                <small class="text-muted">Multa por cada día de retraso después de la fecha
-                                    límite.</small>
+
+                            <div class="form-group full-width" id="panelManualConfig"
+                                style="display: none; background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffeeba;">
+                                <h4>⚠️ Configuración Manual</h4>
+                                <p>Para usar este método, debe asignar manualmente el porcentaje de participación a cada
+                                    usuario en la tabla de Participantes (Columna 'Porcentaje'). La suma debe ser
+                                    exactamente 100%.</p>
                             </div>
-                            <div class="form-group full-width">
-                                <label for="configDiasPago">Días de Pago (Límites) *</label>
-                                <input type="text" id="configDiasPago" placeholder="15,30" required>
-                                <small class="text-muted">Días del mes en que vencen los aportes (separados por coma).
-                                    Ej: 15,30</small>
+
+                            <div class="form-group full-width" style="margin-top: 20px;">
+                                <button type="submit" class="btn btn-primary" id="btnGuardarConfigDistribucion"
+                                    style="width: 100%; padding: 15px; font-size: 1.1rem;">
+                                    💾 Guardar Método de Distribución
+                                </button>
                             </div>
-                            <div class="form-group full-width">
-                                <button type="submit" class="btn btn-primary" id="btnGuardarConfig">💾 Guardar
-                                    Configuración</button>
+
+                            <div class="form-group full-width"
+                                style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+                                <h4 class="text-danger"><i class="fas fa-exclamation-triangle"></i> Zona de Reparación
+                                </h4>
+                                <p class="text-muted">Utilice esta opción si detecta moras automáticas (-3000)
+                                    incorrectas o masivas en todos los participantes debido a un error de cálculo.</p>
+                                <button type="button" class="btn btn-danger" onclick="repararMorasUI()"
+                                    style="width: 100%;">
+                                    🛠️ Corregir Moras Masivas (Eliminar -3000)
+                                </button>
                             </div>
                         </form>
                     </div>
