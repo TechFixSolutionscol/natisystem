@@ -999,31 +999,132 @@
         </div>
     </div>
 
-    <!-- Modal Registrar Sorteo -->
-    <div id="modalPollaSorteo" class="modal">
+    <!-- Modal Registrar Sorteo (Cierre) -->
+    <div id="modalPollaResultado" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Registrar Sorteo</h2>
-                <span class="close-modal">&times;</span>
+                <h2>Registrar Resultado del Sorteo</h2>
+                <span class="close-modal" onclick="closeModal('modalPollaResultado')">&times;</span>
             </div>
             <div class="modal-body">
-                <form id="formPollaSorteo">
+                <form id="formPollaResultado">
+                    <input type="hidden" id="pollaResultadoId">
                     <div class="form-group">
-                        <label for="pollaSorteoFecha">Fecha del Sorteo</label>
-                        <input type="date" id="pollaSorteoFecha" required>
+                        <label>Sorteo</label>
+                        <input type="text" id="pollaResultadoFecha" readonly disabled class="form-control">
                     </div>
                     <div class="form-group">
-                        <label for="pollaSorteoNumero">Número Ganador (2 cifras)</label>
-                        <input type="number" id="pollaSorteoNumero" min="0" max="99" placeholder="00" required>
+                        <label for="pollaNumeroGanador">Número Ganador (2 cifras)</label>
+                        <input type="number" id="pollaNumeroGanador" min="0" max="99" placeholder="Ej: 42" required
+                            class="form-control" style="font-size: 2rem; text-align: center;">
                     </div>
-                    <p class="text-muted"><small>Nota: Al registrar el sorteo, la bolsa se distribuirá si hay
-                            ganador o se
-                            acumulará como ganancia general si no lo hay.</small></p>
-                    <div class="modal-footer" style="padding: 10px 0 0 0; border: none;">
-                        <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
-                        <button type="submit" class="btn btn-primary">Registrar Ganador</button>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Esta acción cerrará el sorteo y calculará los ganadores automáticamente. No se puede deshacer.
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                            onclick="closeModal('modalPollaResultado')">Cancelar</button>
+                        <button type="submit" class="btn btn-danger">Confirmar Resultado</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal CREAR NUEVO Sorteo -->
+    <div id="modalCrearSorteo" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🎱 Crear Nuevo Sorteo</h2>
+                <span class="close-modal" onclick="closeModal('modalCrearSorteo')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="formCrearSorteo">
+                    <div class="form-group">
+                        <label for="nuevoSorteoFecha">Fecha del Juego</label>
+                        <input type="date" id="nuevoSorteoFecha" required class="form-control">
+                        <small class="text-muted">Generalmente es el próximo viernes.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="nuevoSorteoValor">Valor por Número</label>
+                        <input type="number" id="nuevoSorteoValor" value="10000" required class="form-control">
+                    </div>
+                    <div class="alert alert-info">
+                        Al crear un nuevo sorteo, el sistema lo marcará como <strong>ACTIVO</strong> y estará disponible
+                        inmediatamente para los participantes.
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                            onclick="closeModal('modalCrearSorteo')">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Crear Sorteo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ASIGNAR NÚMERO MANUAL -->
+    <div id="modalAsignarNumero" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Asignar Número Manualmente</h2>
+                <span class="close-modal" onclick="closeModal('modalAsignarNumero')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="formAsignarNumero">
+                    <div class="form-group">
+                        <label for="asignarParticipante">Participante</label>
+                        <select id="asignarParticipante" required class="form-control">
+                            <option value="">Cargando...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="asignarNumero">Número (00-99)</label>
+                        <select id="asignarNumero" required class="form-control">
+                            <!-- Se llena vía JS con disponibles -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="asignarPagado" checked style="width: 20px; height: 20px;">
+                            Marcar como PAGADO inmediatamente
+                        </label>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                            onclick="closeModal('modalAsignarNumero')">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Asignar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal GESTIONAR SOLICITUD (Ver Comprobante) -->
+    <div id="modalGestionarSolicitud" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Validar Solicitud</h2>
+                <span class="close-modal" onclick="closeModal('modalGestionarSolicitud')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="detalleSolicitud" class="mb-3">
+                    <!-- Info inyectada -->
+                </div>
+                <div class="comprobante-viewer"
+                    style="text-align: center; margin: 20px 0; max-height: 400px; overflow: auto; background: #f0f0f0; padding: 10px; border-radius: 8px;">
+                    <img id="imgComprobante" src="" alt="Comprobante" style="max-width: 100%; display: none;">
+                    <iframe id="pdfComprobante" src="" style="width: 100%; height: 300px; display: none;"
+                        frameborder="0"></iframe>
+                    <p id="noComprobanteMsg" style="color: #666; display: none;">Sin comprobante digital.</p>
+                </div>
+                <div class="modal-footer" style="justify-content: space-between;">
+                    <button type="button" class="btn btn-danger" onclick="procesarSolicitud('RECHAZAR')">❌
+                        Rechazar</button>
+                    <button type="button" class="btn btn-success" onclick="procesarSolicitud('APROBAR')">✅ Aprobar
+                        Pago</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1137,6 +1238,7 @@
     </div>
 
     <script src="js/app.js"></script>
+    <script src="js/polla_admin.js"></script>
     <script>
         // Inicializar filtros de participantes cuando la página esté lista
         window.addEventListener('load', function () {

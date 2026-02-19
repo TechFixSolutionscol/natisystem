@@ -14,10 +14,11 @@
     // ==========================================
 
     /**
-     * ⚠️ IMPORTANTE: Reemplaza esta URL con la URL de tu Google Apps Script
-     * La URL termina en /exec y se obtiene al implementar el script
+     * ⚠️ IMPORTANTE: URL de la API de Google Apps Script
+     * Se expone globalmente para otros módulos
      */
-    const API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
+    window.API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
+    const API_URL = window.API_URL; // Para uso local dentro de la función
 
     // Variables globales de configuración (con valores por defecto)
     let GLOBAL_CONFIG = {
@@ -964,50 +965,16 @@
     // ==========================================
 
     /**
-     * Carga los datos de la Polla Loca
-     */
-    async function loadPollaData() {
-        const tbody = document.getElementById('pollaTableBody');
-        if (!tbody) return;
-
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Cargando datos de la polla...</td></tr>';
-
-        try {
-            // Cargar select de participantes para asignación
-            loadParticipantesSelect('pollaAsignarParticipante');
-
-            // Cargar datos reales desde el backend con anti-cache
-            const response = await fetch(`${API_URL}?action=getPollaData&v=${new Date().getTime()}`);
-            const result = await response.json();
-
-            if (result.status === 'success') {
-                const { numeros, sorteos } = result.data;
-
-                // Mapear números asignados para fácil acceso
-                const numMap = {};
-                numeros.forEach(n => {
-                    numMap[String(n.numero).padStart(2, '0')] = {
-                        nombre: n.participante,
-                        id: n.id_participante,
-                        pagado: n.pagado === true || String(n.pagado).toUpperCase() === 'TRUE'
-                    };
-                });
-
-                renderPollaTable(numMap);
-                renderPollaHistory(sorteos);
-
-                // Calcular bolsa (Solo los números pagados)
-                const totalPagados = numeros.filter(n => n.pagado === true || String(n.pagado).toUpperCase() === 'TRUE').length;
-                document.getElementById('pollaBolsa').textContent = formatCurrency(totalPagados * 10000);
-
-                document.getElementById('pollaFecha').textContent = 'Próximo Viernes';
-            } else {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Error: ${result.message}</td></tr>`;
-            }
-
-        } catch (error) {
-            console.error('Error al cargar datos de la polla:', error);
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error de conexión</td></tr>';
+ * Carga los datos de la Polla Loca
+ * Redirige al nuevo módulo polla_admin.js
+ */
+    function loadPollaData() {
+        if (typeof initPollaDashboard === 'function') {
+            initPollaDashboard();
+        } else {
+            console.error('El módulo polla_admin.js no se ha cargado correctamente.');
+            const tbody = document.getElementById('pollaTableBody');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error: Módulo no encontrado. Recargue la página.</td></tr>';
         }
     }
 
@@ -1059,41 +1026,6 @@
         tbody.innerHTML = html;
     }
 
-    /**
-     * Renderiza el historial de sorteos
-     * @param {Array} sorteos - Lista de sorteos realizados
-     */
-    async function renderPollaHistory(sorteos) {
-        const tbody = document.getElementById('pollaHistoryBody');
-        if (!tbody) return;
-
-        if (!sorteos || sorteos.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No hay sorteos registrados aún</td></tr>';
-            return;
-        }
-
-        // Obtener participantes para buscar nombres de ganadores
-        const resParticipantes = await fetch(`${API_URL}?action=getParticipantes`);
-        const resultP = await resParticipantes.json();
-        const pMap = {};
-        if (resultP.status === 'success') {
-            resultP.data.forEach(p => pMap[p.id] = p.nombre);
-        }
-
-        tbody.innerHTML = sorteos.reverse().map(s => {
-            const ganador = s.id_ganador === 'ACUMULADO' ? '<span class="badge badge-info">ACUMULADO</span>' :
-                (pMap[s.id_ganador] || 'Desconocido');
-
-            return `
-                <tr>
-                    <td>${formatDate(s.fecha)}</td>
-                    <td><strong class="text-primary">${s.numero_ganador}</strong></td>
-                    <td>${ganador}</td>
-                    <td>${formatCurrency(s.monto_total)}</td>
-                </tr>
-            `;
-        }).join('');
-    }
 
     /**
      * Formatea un número como moneda colombiana

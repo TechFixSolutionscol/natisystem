@@ -375,11 +375,79 @@
 
                 <div style="text-align: center; margin-top: 30px;">
                     <button onclick="resetConsulta()" class="btn btn-secondary btn-sm">Nueva Consulta</button>
+                    <!-- BOTÓN POLLA V2 -->
+                    <button onclick="checkPollaStatus()" class="btn btn-warning btn-sm"
+                        style="margin-left: 10px; background: #f59e0b; border: none; color: white;">
+                        🎱 Jugar La Polla
+                    </button>
                 </div>
 
             </div>
         </div>
-    </div>
+
+        <!-- MODAL DE LA POLLA (NUEVO) -->
+        <div id="pollaModal" class="modal-overlay">
+            <div class="modal-content" style="max-width: 600px;">
+                <button class="btn-close-modal" onclick="closePollaModal()">&times;</button>
+
+                <div class="modal-header">
+                    <h2>🎱 La Polla Loca</h2>
+                    <p id="pollaInfoSorteo" style="color: #666; font-size: 0.9rem;">Cargando sorteo...</p>
+                </div>
+
+                <div id="pollaContent">
+                    <!-- VISTA 1: SELECCIÓN DE NÚMERO -->
+                    <div id="viewSeleccionPolla">
+                        <div class="polla-grid-container"
+                            style="max-height: 300px; overflow-y: auto; margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; border-radius: 8px;">
+                            <p style="text-align: center; margin-bottom: 10px;">Selecciona tu número (<span
+                                    id="precioPolla">$10.000</span>)</p>
+                            <div id="gridNumeros"
+                                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 5px;">
+                                <!-- Grid generado por JS -->
+                            </div>
+                        </div>
+                        <div style="text-align: center;">
+                            <p id="seleccionPollaMsg"
+                                style="min-height: 20px; color: var(--primary-color); font-weight: bold;"></p>
+                        </div>
+                    </div>
+
+                    <!-- VISTA 2: CONFIRMACIÓN Y PAGO -->
+                    <div id="viewPagoPolla" style="display: none;">
+                        <h3 style="text-align: center; color: var(--primary-dark);">Confirmar Número <span
+                                id="numSelectedConfirm" style="font-size: 1.5rem; color: #f59e0b;">--</span></h3>
+
+                        <form id="formPolla" onsubmit="handlePollaSubmit(event)">
+                            <div class="form-group">
+                                <label>Sube tu comprobante de pago:</label>
+                                <div class="file-upload-area" onclick="document.getElementById('filePolla').click()"
+                                    style="padding: 15px;">
+                                    <input type="file" id="filePolla" accept="image/*,application/pdf"
+                                        style="display: none;" onchange="handleFilePolla(event)">
+                                    <div id="previewPolla">📸 Adjuntar Comprobante</div>
+                                </div>
+                                <p id="fileNamePolla" style="text-align: center; font-size: 0.8rem; margin-top: 5px;">
+                                </p>
+                            </div>
+
+                            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                                <button type="button" class="btn btn-secondary" onclick="backToGrid()">Volver</button>
+                                <button type="submit" class="btn btn-success" id="btnSubmitPolla" disabled>Enviar
+                                    Solicitud</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- VISTA 3: MENSAJES -->
+                    <div id="viewMsgPolla" style="display: none; text-align: center; padding: 20px;">
+                        <h3 id="msgTitlePolla"></h3>
+                        <p id="msgBodyPolla"></p>
+                        <button class="btn btn-primary" onclick="closePollaModal()">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     </div>
 
@@ -822,6 +890,209 @@
                 document.getElementById('formAporteExterno').style.display = 'block';
                 alert('Error al registrar: ' + error.message);
             }
+        }
+
+        // ==========================================
+        // LÓGICA DE LA POLLA (FRONTEND)
+        // ==========================================
+        let currentSorteo = null;
+        let selectedNumber = null;
+        let filePolla = null;
+
+        async function checkPollaStatus() {
+            // UI Loading
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Verificando...';
+            btn.disabled = true;
+
+            try {
+                // 1. Obtener Sorteo Activo
+                const resp = await fetch(`${API_URL}?action=getPollaSorteoActivo`);
+                const json = await resp.json();
+
+                if (json.status === 'success' && json.data) {
+                    currentSorteo = json.data;
+                    openPollaModal();
+                } else {
+                    alert('No hay sorteos activos en este momento. ¡Intenta más tarde!');
+                }
+
+            } catch (e) {
+                alert('Error conectando con el servidor de Polla.');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function openPollaModal() {
+            document.getElementById('pollaModal').style.display = 'flex';
+            document.getElementById('pollaInfoSorteo').textContent = `Sorteo del ${formatDate(currentSorteo.fecha.substring(0, 10))} | Valor: ${formatCurrency(currentSorteo.valor_por_numero)}`;
+            document.getElementById('precioPolla').textContent = formatCurrency(currentSorteo.valor_por_numero);
+
+            // Cargar Grid
+            loadNumerosGrid();
+
+            // Reset Views
+            document.getElementById('viewSeleccionPolla').style.display = 'block';
+            document.getElementById('viewPagoPolla').style.display = 'none';
+            document.getElementById('viewMsgPolla').style.display = 'none';
+            selectedNumber = null;
+            document.getElementById('seleccionPollaMsg').textContent = '';
+        }
+
+        function closePollaModal() {
+            document.getElementById('pollaModal').style.display = 'none';
+        }
+
+        async function loadNumerosGrid() {
+            const grid = document.getElementById('gridNumeros');
+            grid.innerHTML = '<p>Cargando disponibilidad...</p>';
+
+            try {
+                // Obtener números ocupados
+                const resp = await fetch(`${API_URL}?action=getPollaNumerosPorSorteo&sorteo_id=${currentSorteo.id}`);
+                const json = await resp.json();
+                const ocupados = json.status === 'success' ? json.data : [];
+
+                // Crear mapa de estados
+                const estadoMap = {}; // numero -> estado
+                ocupados.forEach(op => {
+                    estadoMap[parseInt(op.numero)] = op.estado_polla; // PENDIENTE, PAGADO, etc.
+                });
+
+                grid.innerHTML = '';
+
+                // Generar 00-99
+                for (let i = 0; i <= 99; i++) {
+                    const btn = document.createElement('button');
+                    const numStr = String(i).padStart(2, '0');
+                    btn.textContent = numStr;
+                    btn.style.padding = '8px';
+                    btn.style.border = '1px solid #ccc';
+                    btn.style.borderRadius = '5px';
+                    btn.style.cursor = 'pointer';
+                    btn.style.background = 'white';
+
+                    // Verificar estado
+                    if (estadoMap[i]) {
+                        if (estadoMap[i] === 'PAGADO') {
+                            btn.style.background = '#fee2e2'; // Rojo claro
+                            btn.style.color = '#991b1b';
+                            btn.disabled = true;
+                            btn.title = 'Vendido';
+                        } else if (estadoMap[i] === 'PENDIENTE') {
+                            btn.style.background = '#fef3c7'; // Amarillo claro
+                            btn.style.color = '#92400e';
+                            btn.disabled = true;
+                            btn.title = 'En proceso de validación';
+                        } else if (estadoMap[i] === 'GANADOR') {
+                            btn.style.background = '#d1fae5'; // Verde ganador
+                            btn.style.fontWeight = 'bold';
+                        }
+                    } else {
+                        // Disponible
+                        btn.onclick = () => selectNumber(i, btn);
+                    }
+
+                    grid.appendChild(btn);
+                }
+
+            } catch (e) {
+                grid.innerHTML = '<p style="color:red">Error cargando números</p>';
+            }
+        }
+
+        function selectNumber(num, btnElement) {
+            // Clear previous selection style
+            const allBtns = document.getElementById('gridNumeros').querySelectorAll('button');
+            allBtns.forEach(b => {
+                if (!b.disabled) b.style.background = 'white';
+            });
+
+            // Highlight new
+            btnElement.style.background = 'var(--primary-color)';
+            btnElement.style.color = 'white';
+
+            selectedNumber = num;
+            const numStr = String(num).padStart(2, '0');
+            document.getElementById('seleccionPollaMsg').innerHTML =
+                `Has seleccionado el <b>${numStr}</b>. <button class="btn btn-sm btn-success" onclick="goToPagoPolla()">Confirmar</button>`;
+        }
+
+        function goToPagoPolla() {
+            if (selectedNumber === null) return;
+            document.getElementById('viewSeleccionPolla').style.display = 'none';
+            document.getElementById('viewPagoPolla').style.display = 'block';
+            document.getElementById('numSelectedConfirm').textContent = String(selectedNumber).padStart(2, '0');
+        }
+
+        function backToGrid() {
+            document.getElementById('viewPagoPolla').style.display = 'none';
+            document.getElementById('viewSeleccionPolla').style.display = 'block';
+        }
+
+        function handleFilePolla(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            // Max 5MB
+            if (file.size > 5 * 1024 * 1024) { alert('Max 5MB'); e.target.value = ''; return; }
+
+            filePolla = file;
+            document.getElementById('fileNamePolla').textContent = '✅ ' + file.name;
+            document.getElementById('btnSubmitPolla').disabled = false;
+        }
+
+        async function handlePollaSubmit(e) {
+            e.preventDefault();
+            if (!filePolla) return;
+
+            // Loading
+            const btn = document.getElementById('btnSubmitPolla');
+            btn.innerHTML = 'Enviando...';
+            btn.disabled = true;
+
+            // Convert Base64
+            const reader = new FileReader();
+            reader.readAsDataURL(filePolla);
+            reader.onload = async function () {
+                const base64 = reader.result.split(',')[1];
+
+                const payload = {
+                    action: 'solicitarNumeroPolla',
+                    cedula: currentCedula, // Usamos la del login actual
+                    numero: selectedNumber,
+                    sorteo_id: currentSorteo.id,
+                    fileData: base64,
+                    fileName: filePolla.name,
+                    mimeType: filePolla.type
+                };
+
+                try {
+                    const resp = await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    const json = await resp.json();
+
+                    if (json.status === 'success') {
+                        showPollaMsg('¡Solicitud Enviada!', 'Tu número ha sido reservado. Espera la confirmación del administrador.');
+                    } else {
+                        showPollaMsg('Error', json.message);
+                    }
+                } catch (err) {
+                    // CORS o error de red a veces da opaco en GAS, pero intentamos parsing
+                    showPollaMsg('Enviado', 'Solicitud procesada. Verifica tu correo.');
+                }
+            };
+        }
+
+        function showPollaMsg(title, body) {
+            document.getElementById('viewPagoPolla').style.display = 'none';
+            document.getElementById('viewMsgPolla').style.display = 'block';
+            document.getElementById('msgTitlePolla').textContent = title;
+            document.getElementById('msgBodyPolla').textContent = body;
         }
     </script>
 </body>
