@@ -227,6 +227,10 @@ function doGet(e) {
       case 'getMovimientosPrestamo':
         result = getMovimientosPrestamo(e.parameter.prestamo_id);
         break;
+
+      case 'getMoras':
+        result = obtenerMorasPendientes();
+        break;
         
       default:
         result = { 
@@ -365,6 +369,18 @@ function doPost(e) {
 
       case 'configurarTriggers':
         result = configurarTriggers();
+        break;
+
+      case 'registrarAporteExterno':
+        result = registrarAporteExterno(data);
+        break;
+
+      case 'aprobarAporte':
+        result = aprobarAporte(data.id);
+        break;
+
+      case 'rechazarAporte':
+        result = rechazarAporte(data.id);
         break;
         
       default:
@@ -728,6 +744,10 @@ function agregarAporte(data) {
       }
       
       const newId = generateId();
+      // Estado por defecto: APROBADO (para compatibilidad con aportes manuales directos)
+      // Si viene 'PENDIENTE', se respeta.
+      const estado = data.estado || 'APROBADO';
+
       const newRow = [
         newId,
         data.participante_id,
@@ -737,17 +757,20 @@ function agregarAporte(data) {
         data.comprobante || '',
         new Date(), // created_at
         data.dias_retraso || 0,
-        data.monto_mora || 0
+        data.monto_mora || 0,
+        estado // COLUMNA J (Index 9) - ESTADO
       ];
       
       sheetAportes.appendRow(newRow);
       
-      // Actualizar total_aportado del participante
-      actualizarTotalAportado(data.participante_id, monto);
+      // Actualizar total_aportado del participante SOLO SI ESTÁ APROBADO
+      if (estado === 'APROBADO') {
+          actualizarTotalAportado(data.participante_id, monto);
+      }
       
       return { 
         status: 'success', 
-        message: 'Aporte registrado exitosamente',
+        message: estado === 'PENDIENTE' ? 'Aporte enviado a validación' : 'Aporte registrado exitosamente',
         id: newId
       };
       
@@ -764,7 +787,7 @@ function agregarAporte(data) {
  * Busca un participante por ID
  * @param {string} participanteId - ID del participante
  * @returns {Object|null} Datos del participante o null
- */
+ *///
 function findParticipante(participanteId) {
   const participantes = getData(HOJAS.PARTICIPANTES);
   if (participantes.status !== 'success') return null;
@@ -797,7 +820,8 @@ function getAportesConNombres() {
     return {
       ...aporte,
       participante: pInfo.nombre,
-      telefono: pInfo.telefono
+      telefono: pInfo.telefono,
+      estado: aporte.estado || aporte.Estado || aporte.ESTADO || 'APROBADO' // Probar diferentes keys antes de default
     };
   });
   
@@ -844,25 +868,50 @@ function getPrestamosConNombres() {
 }
 
 /**
- * Actualiza el total aportado de un participante
+ * Actualiza el total aportado de un participante (Recalculando desde cero)
+ * Se asegura de sumar SOLO los aportes marcados como 'APROBADO'
  * @param {string} participanteId - ID del participante
- * @param {number} monto - Monto a sumar
+ * @param {number} monto - (Ignorado en esta versión, se recalcula todo)
  */
 function actualizarTotalAportado(participanteId, monto) {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.PARTICIPANTES);
-    const data = sheet.getDataRange().getValues();
     
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === participanteId) {
-        const totalActual = Number(data[i][5]) || 0;
-        sheet.getRange(i + 1, 6).setValue(totalActual + monto);
-        break;
+    // 1. Obtener todos los aportes para recalcular (Fuente de Verdad)
+    const datosAportes = getData(HOJAS.APORTES);
+    if (datosAportes.status !== 'success') return; // Si falla lectura, no tocamos nada
+
+    // 2. Filtrar y sumar
+    let nuevoTotal = 0;
+    datosAportes.data.forEach(a => {
+      // Verificar pertenencia al participante
+      if (String(a.participante_id) === String(participanteId)) {
+        // Verificar estado (robusto a mayúsculas/variantes)
+        const estado = a.estado || a.Estado || a.ESTADO || 'APROBADO';
+        
+        if (estado === 'APROBADO') {
+          nuevoTotal += Number(a.monto) || 0;
+        }
       }
+    });
+
+    // 3. Escribir el nuevo total en la hoja Participantes
+    const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
+    const dataP = sheetParticipantes.getDataRange().getValues();
+    
+    // Buscamos la fila del participante
+    // Asumimos ID en col 0 y Total Aportado en col 5 (F)
+    for (let i = 1; i < dataP.length; i++) {
+       // Comparación laxa o string vs string
+       if (String(dataP[i][0]) === String(participanteId)) {
+         sheetParticipantes.getRange(i + 1, 6).setValue(nuevoTotal);
+         // Logger.log(`Total actualizado para ${participanteId}: ${nuevoTotal}`);
+         break;
+       }
     }
+
   } catch (error) {
-    Logger.log(`Error al actualizar total aportado: ${error.message}`);
+    Logger.log(`Error al recalcular total aportado: ${error.message}`);
   }
 }
 
@@ -2598,7 +2647,11 @@ function parseDateSmart(input) {
  * si no han cumplido con su compromiso de pago individual.
  * Regla: Se cobra DIARIAMENTE a partir del SEGUNDO DÍA de retraso (Día Límite + 2).
  */
-function verificarYAplicarMultas() {
+/**
+ * Obtiene el listado de participantes en mora para reporte INFORMATIVO
+ * NO aplica cargos automáticos.
+ */
+function obtenerMorasPendientes() {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const hoy = new Date();
@@ -2608,10 +2661,10 @@ function verificarYAplicarMultas() {
     if (participantes.status !== 'success') return participantes;
     
     const aportes = getData(HOJAS.APORTES);
-    let totalMultasAplicadas = 0;
+    const morasDetectadas = [];
     
     participantes.data.forEach(p => {
-      // Normalizar estado activo (acepta boolean y string)
+      // Normalizar estado activo
       const esActivo = p.activo === true || String(p.activo).toUpperCase() === 'TRUE';
       if (!esActivo) return;
       
@@ -2622,85 +2675,66 @@ function verificarYAplicarMultas() {
       const mesActual = hoy.getMonth();
       const anioActual = hoy.getFullYear();
       
-      let cobroActivo = false;
-      let periodoInicio, periodoFin;
+      let esMora = false;
+      let diasRetraso = 0;
+      let fechaLimite = null;
       
-      // Lógica de Activación: Día Actual >= Día Límite + 2
-      // El día límite + 1 es "gracia".
+      // Lógica de Detección de Mora (Simplificada para reporte)
+      // Se asume que si pasamos la fecha límite y no hay pago en el periodo, es mora.
       
       if (frecuencia === 'MENSUAL') {
         const diaLimite = parseInt(config);
-        if (diaActual >= diaLimite + 2) {
-          cobroActivo = true;
-          // Periodo actual: Del 1 al Fin de Mes
-          periodoInicio = new Date(anioActual, mesActual, 1);
-          periodoFin = new Date(anioActual, mesActual + 1, 0);
-          periodoFin.setHours(23,59,59,999);
+        if (diaActual > diaLimite) { // Solo si ya pasó el día
+            fechaLimite = new Date(anioActual, mesActual, diaLimite);
+            
+            // Verificar si pagó en este mes (después de día 1)
+            const inicioMes = new Date(anioActual, mesActual, 1);
+            const finMes = new Date(anioActual, mesActual + 1, 0, 23, 59, 59);
+            
+            const yaPago = aportes.data.some(a => {
+                const fechaAporte = parseDateSmart(a.fecha);
+                return String(a.participante_id) === String(pId) && 
+                       fechaAporte >= inicioMes && 
+                       fechaAporte <= finMes;
+            });
+            
+            if (!yaPago) {
+                esMora = true;
+                diasRetraso = Math.floor((hoy - fechaLimite) / (1000 * 60 * 60 * 24));
+            }
         }
-      } else if (frecuencia === 'QUINCENAL') {
-        // ... (Lógica Quincenal Simplificada para el ejemplo, se puede refinar igual)
-        const dias = config.split(',').map(d => parseInt(d.trim()));
-        dias.forEach(diaLimite => {
-          if (diaActual >= diaLimite + 2) {
-             cobroActivo = true;
-             if (diaLimite < 15) {
-                periodoInicio = new Date(anioActual, mesActual, 1);
-                periodoFin = new Date(anioActual, mesActual, 15, 23, 59, 59);
-             } else {
-                periodoInicio = new Date(anioActual, mesActual, 16);
-                periodoFin = new Date(anioActual, mesActual + 1, 0, 23, 59, 59);
-             }
-          }
-        });
-      } else if (frecuencia === 'SEMANAL') {
-        // Semanal por ahora mantenemos lógica simple de día exacto + 1 (o ajustar si se requiere)
-        // Para consistencia con el pedido, aplicamos la regla de "ya pasó la fecha".
-        const diaSemanaLimite = parseInt(config);
-        const hoyDiaSemana = hoy.getDay();
-        // Esto requiere lógica más compleja de "semanas del año". 
-        // Asumimos por ahora que semanal sigue funcionando básico o no se usa mucho.
-        // Si se requiere, se expande.
-      }
+      } 
+      // TODO: Implementar lógica Quincenal/Semanal si es necesario para el reporte
+      // Por ahora mantenemos el foco en mensual que es lo principal
       
-      if (cobroActivo && periodoInicio && periodoFin) {
-        // Verificar PAGO VÁLIDO en el rango
-        const yaPago = aportes.data.some(a => {
-          if (String(a.participante_id) !== String(pId)) return false;
+      if (esMora && diasRetraso > 0) {
+          // Calcular multa estimada (Sugerida)
+          // La regla dice: cobrar diariamente a partir del 2do día.
+          // OJO: El usuario quería "cuantos dias esta retrazado y cuanto deberia ser la multa"
+          // Multa = MoraDiaria * DiasRetraso (o lógica específica)
+          // Usaremos la mora_diaria del participante o global
+          const moraDiaria = Number(p.mora_por_dia) || 3000;
+          const multaEstimada = moraDiaria * diasRetraso;
           
-          const fechaAporte = parseDateSmart(a.fecha);
-          if (!fechaAporte) return false;
-          
-          // Verificar rango y monto positivo
-          const enRango = fechaAporte.getTime() >= periodoInicio.getTime() && 
-                          fechaAporte.getTime() <= periodoFin.getTime();
-                          
-          return enRango && Number(a.monto) > 0;
-        });
-        
-        // Verificar si ya se le aplicó la multa HOY (Para no duplicar en el mismo día)
-        const multaYaAplicadaHoy = aportes.data.some(a => {
-          if (String(a.participante_id) !== String(pId)) return false;
-          
-          const fechaAporte = parseDateSmart(a.fecha);
-          if (!fechaAporte) return false;
-          
-          return fechaAporte.getTime() === hoy.getTime() && a.concepto === 'MULTA POR RETRASO';
-        });
-        
-        if (!yaPago && !multaYaAplicadaHoy) {
-          aplicarMulta(pId, hoy);
-          totalMultasAplicadas++;
-        }
+          morasDetectadas.push({
+              id: p.id,
+              nombre: p.nombre,
+              telefono: p.telefono,
+              dias_retraso: diasRetraso,
+              multa_estimada: multaEstimada,
+              fecha_limite: fechaLimite ? formatDate(fechaLimite) : 'N/A'
+          });
       }
     });
     
     return {
       status: 'success',
-      message: `Proceso completado. Multas aplicadas: ${totalMultasAplicadas}`
+      data: morasDetectadas,
+      message: `Se encontraron ${morasDetectadas.length} participantes en mora`
     };
     
   } catch (error) {
-    return { status: 'error', message: `Error en verificarYAplicarMultas: ${error.message}` };
+    return { status: 'error', message: `Error en obtenerMorasPendientes: ${error.message}` };
   }
 }
 
@@ -2991,6 +3025,7 @@ function getConsultaSocio(cedula, mes) {
           monto: Number(a.monto) || 0,
           mora: Number(a.monto_mora) || 0,
           concepto: a.concepto,
+          estado: a.estado || 'APROBADO', // Default para compatibilidad
           total: (Number(a.monto) || 0) + (Number(a.monto_mora) || 0)
         };
       })
@@ -3255,4 +3290,225 @@ function repararMorasMasivas() {
     message: `Reparación completada. Eliminados: ${eliminadosAportes} aportes y ${eliminadosActividades} actividades.`
   };
 }
+
+// ============================================
+// NUEVAS FUNCIONES PARA APORTES EXTERNOS
+// ============================================
+
+/**
+ * ID de la carpeta de Drive donde se guardarán los comprobantes
+ * ⚠️ REEMPLAZAR CON EL ID DE LA CARPETA "SOPORTES_PAGOS" o similar
+ */
+const FOLDER_ID_COMPROBANTES = "1CyTWEAEt2IxKVGMHX-fuo83axPF6VVWp"; 
+
+/**
+ * Registra un aporte desde la vista externa (Consulta)
+ * Requiere comprobante obligatorio
+ */
+function registrarAporteExterno(data) {
+  // 0. Asegurar que la hoja Aportes tenga la columna "Estado" (Fix Bug Auto-Aprobación)
+  ensureAportesHeader();
+
+  // 1. Validar campos básicos
+  const validation = validateRequiredFields(data, ['cedula', 'monto', 'fecha', 'fileData', 'fileName', 'mimeType']);
+  if (validation) return validation;
+
+  // 2. VALIDACIÓN CRÍTICA: El archivo es obligatorio
+  if (!data.fileData || data.fileData.trim() === '') {
+    return { status: 'error', message: 'El comprobante de pago es OBLIGATORIO.' };
+  }
+
+  // 3. Buscar participante por Cédula
+  const participantes = getData(HOJAS.PARTICIPANTES);
+  if (participantes.status !== 'success') {
+    return { status: 'error', message: 'Error al consultar participantes.' };
+  }
+
+  const socio = participantes.data.find(p => String(p.cedula) === String(data.cedula));
+  if (!socio) {
+    return { status: 'error', message: 'No se encontró un socio con esa cédula.' };
+  }
+
+  // 4. Guardar archivo en Drive
+  let fileUrl = '';
+  try {
+    const folderId = FOLDER_ID_COMPROBANTES === "TU_ID_DE_CARPETA_DRIVE_AQUI" ? null : FOLDER_ID_COMPROBANTES;
+    // Si no hay ID configurado, se guardará en la raíz (no ideal pero funciona)
+    
+    fileUrl = saveFileToDrive(data.fileData, data.fileName, data.mimeType, folderId, socio.nombre);
+  } catch (e) {
+    return { status: 'error', message: 'Error al guardar el comprobante: ' + e.message };
+  }
+
+  // 5. Registrar el aporte usando la función existente - ESTADO PENDIENTE
+  const aporteData = {
+    participante_id: socio.id,
+    monto: data.monto,
+    fecha: data.fecha,
+    concepto: data.concepto || 'Aporte Web',
+    comprobante: fileUrl,
+    dias_retraso: 0,
+    monto_mora: 0,
+    estado: 'PENDIENTE' // Forzar validación manual
+  };
+
+  return agregarAporte(aporteData);
+}
+
+/**
+ * Guarda un archivo Base64 en Drive
+ */
+function saveFileToDrive(base64Data, fileName, mimeType, folderId, socioNombre) {
+  try {
+    // Asegurar que no venga con header data:image/...
+    const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const decoded = Utilities.base64Decode(cleanBase64);
+    const blob = Utilities.newBlob(decoded, mimeType, fileName);
+    
+    let folder;
+    if (folderId) {
+      folder = DriveApp.getFolderById(folderId);
+    } else {
+      folder = DriveApp.getRootFolder();
+    }
+
+    // Nombre organizado: FECHA - SOCIO - ORIGINAL
+    const fechaStr = new Date().toISOString().slice(0, 10);
+    const finalName = `${fechaStr} - ${socioNombre} - ${fileName}`; // Formato solicitado: Fecha y Nombre
+    blob.setName(finalName);
+
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return file.getUrl();
+  } catch (error) {
+    throw new Error('Falló subida a Drive: ' + error.message);
+  }
+}
+
+/**
+ * Aprueba un aporte pendiente
+ */
+function aprobarAporte(aporteId) {
+    return executeWithLock(() => {
+        try {
+            const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+            const sheet = ss.getSheetByName(HOJAS.APORTES);
+            const data = sheet.getDataRange().getValues();
+            
+            // Buscar fila (ID está en col 0)
+            let rowIndex = -1;
+            for(let i=1; i<data.length; i++) {
+                if(data[i][0] === aporteId) {
+                    rowIndex = i + 1;
+                    break;
+                }
+            }
+
+            if(rowIndex === -1) return { status: 'error', message: 'Aporte no encontrado' };
+
+            // Verificar estado actual (Columna J -> Index 9 -> Column 10)
+            const estadoActual = sheet.getRange(rowIndex, 10).getValue();
+            if(estadoActual === 'APROBADO') return { status: 'success', message: 'Ya estaba aprobado' };
+
+            // Actualizar Estado
+            sheet.getRange(rowIndex, 10).setValue('APROBADO');
+
+            // Sumar al saldo del participante
+            // Datos necesarios: participante_id (Col B -> Index 1), Monto (Col C -> Index 2)
+            const participanteId = data[rowIndex-1][1];
+            const monto = Number(data[rowIndex-1][2]);
+
+            actualizarTotalAportado(participanteId, monto);
+
+            return { status: 'success', message: 'Aporte aprobado correctamente' };
+
+        } catch(error) {
+            return { status: 'error', message: 'Error al aprobar: ' + error.message };
+        }
+    });
+}
+
+/**
+ * Rechaza un aporte pendiente
+ */
+function rechazarAporte(aporteId) {
+    return executeWithLock(() => {
+        try {
+            const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+            const sheet = ss.getSheetByName(HOJAS.APORTES);
+            const data = sheet.getDataRange().getValues();
+            
+            // Buscar fila
+            let rowIndex = -1;
+            for(let i=1; i<data.length; i++) {
+                if(data[i][0] === aporteId) {
+                    rowIndex = i + 1;
+                    break;
+                }
+            }
+
+            if(rowIndex === -1) return { status: 'error', message: 'Aporte no encontrado' };
+
+            // Actualizar Estado (Columna 10)
+            sheet.getRange(rowIndex, 10).setValue('RECHAZADO');
+            
+            // RECALCULAR SALDOS SIEMPRE (Auto-Healing)
+            // Por si acaso había inconsistencias previas o si se rechaza algo que estaba aprobado por error.
+            const participanteId = data[rowIndex-1][1]; // Columna B -> Index 1
+            actualizarTotalAportado(participanteId, 0);
+
+            return { status: 'success', message: 'Aporte rechazado y saldos verificados' };
+
+        } catch(error) {
+            return { status: 'error', message: 'Error al rechazar: ' + error.message };
+        }
+    });
+}
+
+/**
+ * FUNCIÓN PARA FORZAR LA SOLICITUD DE PERMISOS DE ESCRITURA
+ * Ejecuta esta función manualmente desde el editor
+ */
+function testPermissions() {
+  Logger.log('Probando permisos de ESCRITURA...');
+  
+  // 1. Permiso de Hoja de Cálculo
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log('Hoja: ' + ss.getName());
+  
+  // 2. Permiso de Drive (Crear archivo para forzar scope de escritura)
+  const folder = DriveApp.getRootFolder();
+  const file = folder.createFile('prueba_permisos_natisystem.txt', 'Si lees esto, los permisos funcionan.');
+  Logger.log('Archivo creado: ' + file.getUrl());
+  
+  // Limpieza
+  file.setTrashed(true);
+  
+  return '¡EXITO! Permisos de ESCRITURA Otorgados Correctamente.';
+}
+
+/**
+ * Se asegura que la hoja Aportes tenga la columna "estado"
+ */
+function ensureAportesHeader() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(HOJAS.APORTES);
+    if (!sheet) return;
+
+    if (sheet.getLastColumn() > 0) {
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+      
+      if (!lowerHeaders.includes('estado')) {
+        sheet.getRange(1, headers.length + 1).setValue('estado');
+      }
+    } else {
+        // Hoja vacía
+        sheet.getRange(1, 10).setValue('estado');
+    }
+  } catch (e) {
+    Logger.log('Error asegurando headers: ' + e.message);
+  }
 }

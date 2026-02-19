@@ -496,6 +496,10 @@
                 if (countTotal) countTotal.textContent = allAportes.length;
 
                 renderAportes(result.data);
+
+                // Lógica de Validación (Separar pendientes)
+                processValidationInbox(result.data);
+
             } else {
                 console.error('Error al cargar aportes:', result.message);
                 tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error: ${result.message}</td></tr>`;
@@ -517,19 +521,101 @@
     }
 
     /**
+     * Procesa y renderiza la bandeja de validación
+     */
+    function processValidationInbox(aportes) {
+        const inbox = document.getElementById('validationInbox');
+        const tbody = document.getElementById('validationInboxBody');
+        if (!inbox || !tbody) return;
+
+        // Filtrar pendientes
+        const pendientes = aportes.filter(a => a.estado === 'PENDIENTE');
+
+        if (pendientes.length === 0) {
+            inbox.style.display = 'none';
+            return;
+        }
+
+        inbox.style.display = 'block';
+        tbody.innerHTML = pendientes.map(a => `
+            <tr>
+                <td>${formatDate(a.fecha)}</td>
+                <td><strong>${a.participante}</strong></td>
+                <td style="font-size: 1.1em; color: var(--primary-color);">${formatCurrency(a.monto)}</td>
+                <td>
+                    ${a.comprobante ?
+                `<a href="${a.comprobante}" target="_blank" class="btn btn-sm btn-info">📷 Ver Recibo</a>` :
+                '<span class="text-muted">Sin archivo</span>'}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-success" onclick="gestionarValidacionAporte('${a.id}', 'APROBAR', '${a.participante}', ${a.monto})">
+                        ✅ Aprobar
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="gestionarValidacionAporte('${a.id}', 'RECHAZAR', '${a.participante}', ${a.monto})">
+                        ❌ Rechazar
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    /**
+     * Gestiona la aprobación o rechazo de un aporte
+     */
+    window.gestionarValidacionAporte = async function (id, accion, participante, monto) {
+        const confirmMsg = accion === 'APROBAR' ?
+            `¿Confirmas APROBAR el aporte de ${participante} por ${formatCurrency(monto)}? Esto sumará al saldo.` :
+            `¿Estás seguro de RECHAZAR el aporte de ${participante}?`;
+
+        if (!confirm(confirmMsg)) return;
+
+        // UI Feedback
+        const originalText = document.body.style.cursor;
+        document.body.style.cursor = 'wait';
+
+        try {
+            const endpoint = accion === 'APROBAR' ? 'aprobarAporte' : 'rechazarAporte';
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: endpoint, id: id })
+            });
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                alert(`✅ Aporte ${accion === 'APROBAR' ? 'aprobado' : 'rechazado'} correctamente.`);
+                loadAportes(); // Recargar tablas
+            } else {
+                alert('❌ Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error de conexión.');
+        } finally {
+            document.body.style.cursor = originalText;
+        }
+    };
+
+    /**
      * Renderiza la tabla de aportes
      * @param {Array} aportes - Lista de aportes
      */
     function renderAportes(aportes) {
         const tbody = document.getElementById('aportesTableBody');
 
-        if (aportes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No hay aportes registrados</td></tr>';
+        // Mostrar solo aprobados en la tabla histórica principal para no confundir
+        const aprobados = aportes.filter(a => a.estado !== 'PENDIENTE');
+
+        if (aprobados.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No hay aportes aprobados registrados</td></tr>';
             return;
         }
 
-        tbody.innerHTML = aportes.map(a => `
-            <tr>
+        tbody.innerHTML = aprobados.map(a => {
+            const badgeCls = a.estado === 'RECHAZADO' ? 'badge-danger' : 'badge-success';
+            const estadoLabel = a.estado || 'APROBADO';
+
+            return `
+            <tr class="${a.estado === 'RECHAZADO' ? 'text-muted' : ''}" style="${a.estado === 'RECHAZADO' ? 'background: #fbecec;' : ''}">
                 <td>${formatDate(a.fecha)}</td>
                 <td>${a.participante}</td>
                 <td>${formatCurrency(a.monto)}</td>
@@ -537,12 +623,16 @@
                 <td><strong>${formatCurrency(Number(a.monto || 0) + Number(a.monto_mora || 0))}</strong></td>
                 <td>${a.concepto}</td>
                 <td>
+                    <span class="badge ${badgeCls}">${estadoLabel}</span>
+                    ${a.comprobante ? `<a href="${a.comprobante}" target="_blank" title="Ver Comprobante">📎</a>` : ''}
+                </td>
+                <td>
                     <button class="btn btn-sm btn-whatsapp" onclick="enviarComprobanteAporte('${a.participante}', '${a.telefono}', '${a.fecha}', ${a.monto}, ${a.monto_mora || 0}, '${a.concepto}')" title="Enviar comprobante">
-                        <i class="fab fa-whatsapp"></i> Notificar
+                        <i class="fab fa-whatsapp"></i>
                     </button>
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
     }
 
     /**
@@ -2835,6 +2925,94 @@
             console.error(error);
             alert('❌ Error de conexión al intentar reparar.');
         }
+    };
+
+    /**
+     * ==========================================
+     * GESTIÓN DE MORAS (INFORMATIVO)
+     * ==========================================
+     */
+
+    // Función para abrir el modal
+    window.abrirModalMoras = function () {
+        const modal = document.getElementById('modalMoras');
+        if (modal) {
+            modal.style.display = 'block';
+            loadMorasInformativas();
+        }
+    };
+
+    // Función para cerrar el modal
+    window.cerrarModalMoras = function () {
+        const modal = document.getElementById('modalMoras');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    };
+
+    // Cargar datos del backend
+    async function loadMorasInformativas() {
+        const tbody = document.getElementById('morasTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Calculando moras... por favor espere</td></tr>';
+
+        try {
+            const response = await fetch(`${API_URL}?action=getMoras`);
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                renderMorasTable(result.data);
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error: ${result.message}</td></tr>`;
+            }
+        } catch (error) {
+            console.error('Error cargando moras:', error);
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error de conexión</td></tr>`;
+        }
+    }
+
+    // Renderizar tabla
+    function renderMorasTable(data) {
+        const tbody = document.getElementById('morasTableBody');
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-success">🎉 ¡Excelente! No hay participantes en mora actualmente.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.map(m => `
+            <tr>
+                <td>
+                    ${m.nombre}<br>
+                    <small class="text-muted">${m.telefono || ''}</small>
+                </td>
+                <td class="text-danger font-weight-bold">${m.dias_retraso} días</td>
+                <td>${formatCurrency(m.multa_estimada)}</td>
+                <td>${m.fecha_limite}</td>
+                <td>
+                    <button class="btn btn-sm btn-success" 
+                        onclick="enviarRecordatorioMora('${m.nombre}', '${m.telefono}', ${m.dias_retraso}, ${m.multa_estimada})"
+                        title="Enviar WhatsApp">
+                        <i class="fab fa-whatsapp"></i> Notificar
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // Enviar WhatsApp (Helper)
+    window.enviarRecordatorioMora = function (nombre, telefono, dias, multa) {
+        if (!telefono) {
+            alert('El participante no tiene teléfono registrado.');
+            return;
+        }
+
+        // Formatear mensaje
+        const mensaje = `Hola ${nombre}, te informamos amablemente que presentas un retraso de ${dias} días en tu aporte de la Natillera. ` +
+            `Esto podría generar una multa estimada de $${multa.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}. ` +
+            `Agradecemos ponerte al día lo antes posible.`;
+
+        const url = `https://wa.me/57${telefono}?text=${encodeURIComponent(mensaje)}`;
+        window.open(url, '_blank');
     };
 
 })();

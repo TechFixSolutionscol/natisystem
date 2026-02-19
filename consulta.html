@@ -168,6 +168,110 @@
                 text-align: center;
             }
         }
+
+        /* ESTILOS PARA EL MODAL WIZARD */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            /* Hidden by default */
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+            position: relative;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: var(--primary-dark);
+        }
+
+        .step-indicators {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .step-dot {
+            width: 10px;
+            height: 10px;
+            background: #e2e8f0;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .step-dot.active {
+            background: var(--primary-color);
+            transform: scale(1.2);
+        }
+
+        .form-step {
+            display: none;
+        }
+
+        .form-step.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        .file-upload-area {
+            border: 2px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8fafc;
+        }
+
+        .file-upload-area:hover {
+            border-color: var(--primary-color);
+            background: #eff6ff;
+        }
+
+        .btn-close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #94a3b8;
+        }
     </style>
 </head>
 
@@ -212,9 +316,15 @@
                         <h3 id="socioNombre">Nombre del Socio</h3>
                         <p>Cédula: <span id="socioCedula"></span></p>
                     </div>
-                    <div class="estado-badge">
+                    <div class="estado-badge"
+                        style="display: flex; flex-direction: column; align-items: end; gap: 10px;">
                         <span id="socioEstado" class="badge badge-success"
                             style="font-size: 1rem; padding: 8px 15px;">AL DÍA</span>
+
+                        <button onclick="openAporteModal()" class="btn btn-primary"
+                            style="font-size: 0.9rem; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);">
+                            <span class="icon">💸</span> Registrar Aporte
+                        </button>
                     </div>
                 </div>
 
@@ -268,6 +378,86 @@
                 </div>
 
             </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- MODAL WIZARD APORTE -->
+    <div id="aporteModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="btn-close-modal" onclick="closeAporteModal()">&times;</button>
+
+            <div class="modal-header">
+                <h2>Nuevo Aporte</h2>
+                <div class="step-indicators">
+                    <span class="step-dot active" id="dot1"></span>
+                    <span class="step-dot" id="dot2"></span>
+                </div>
+            </div>
+
+            <form id="formAporteExterno" onsubmit="handleAporteSubmit(event)">
+                <!-- PASO 1: DATOS -->
+                <div class="form-step active" id="step1">
+                    <div class="form-group">
+                        <label>Valor a Aportar</label>
+                        <input type="number" id="aporteMonto" class="form-control" placeholder="Ej: 50000" min="1000"
+                            required
+                            style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.2rem;">
+                    </div>
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label>Fecha del Pago</label>
+                        <input type="date" id="aporteFecha" class="form-control" required
+                            style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc;">
+                    </div>
+                    <div class="form-group" style="margin-top: 20px; text-align: right;">
+                        <button type="button" class="btn btn-primary" onclick="nextStep()">Siguiente ➡️</button>
+                    </div>
+                </div>
+
+                <!-- PASO 2: COMPROBANTE (OBLIGATORIO) -->
+                <div class="form-step" id="step2">
+                    <p style="text-align: center; margin-bottom: 20px; color: #64748b;">
+                        Por favor adjunta el comprobante de pago para validar tu aporte.
+                    </p>
+
+                    <div class="file-upload-area" onclick="document.getElementById('fileInput').click()">
+                        <input type="file" id="fileInput" accept="image/*,application/pdf" style="display: none;"
+                            onchange="handleFileSelect(event)">
+                        <div id="uploadPreview">
+                            <span style="font-size: 2rem;">📸</span>
+                            <p style="margin: 10px 0 0 0; font-weight: 500;">Clic para adjuntar recibo</p>
+                            <small class="text-muted">(Imagen o PDF)</small>
+                        </div>
+                    </div>
+                    <p id="fileNameDisplay"
+                        style="text-align: center; margin-top: 10px; color: var(--primary-color); font-weight: bold; font-size: 0.9rem;">
+                    </p>
+
+                    <div style="margin-top: 30px; display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="prevStep()" style="flex: 1;">⬅️
+                            Volver</button>
+                        <button type="submit" class="btn btn-success" id="btnEnviarAporte" disabled style="flex: 1;">✅
+                            Enviar Aporte</button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- LOADING STATE -->
+            <div id="aporteLoading" style="display: none; text-align: center; padding: 20px;">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px;">Subiendo comprobante y registrando...</p>
+                <p style="color: #64748b; font-size: 0.9rem;">Esto puede tardar unos segundos.</p>
+            </div>
+
+            <!-- SUCCESS STATE -->
+            <div id="aporteSuccess" style="display: none; text-align: center; padding: 20px;">
+                <span style="font-size: 3rem;">🎉</span>
+                <h3 style="color: #10b981; margin: 10px 0;">¡Aporte Recibido!</h3>
+                <p>Tu comprobante ha sido subido y el aporte será validado pronto.</p>
+                <button class="btn btn-primary" onclick="closeAporteModal()" style="margin-top: 20px;">Cerrar</button>
+            </div>
+
         </div>
     </div>
 
@@ -409,14 +599,21 @@
 
                 movimientosVisuales.forEach(m => {
                     const tr = document.createElement('tr');
+                    let estadoBadge = '';
+                    if (m.estado === 'PENDIENTE') {
+                        estadoBadge = '<br><span class="badge badge-warning" style="font-size: 0.7em; background: #f59e0b;">⏳ Pendiente Validación</span>';
+                    } else if (m.estado === 'RECHAZADO') {
+                        estadoBadge = '<br><span class="badge badge-danger" style="font-size: 0.7em;">❌ Rechazado</span>';
+                    }
+
                     tr.innerHTML = `
                         <td>${formatDate(m.fechaStr)}</td>
-                        <td>${m.concepto}</td>
+                        <td>${m.concepto} ${estadoBadge}</td>
                         <td style="text-align: right; color: ${m.total < 0 ? 'red' : 'green'};">
                             ${formatCurrency(m.total)}
                         </td>
                         <td style="text-align: right; font-weight: bold;">
-                            ${formatCurrency(m.saldoDespues)}
+                            ${m.estado === 'PENDIENTE' ? '<span style="color:gray; font-weight:normal;">(En Proceso)</span>' : formatCurrency(m.saldoDespues)}
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -495,6 +692,137 @@
             setTimeout(() => el.classList.add('hidden'), 5000);
         }
 
+        // ==========================================
+        // LÓGICA DEL MODAL DE APORTE
+        // ==========================================
+        let selectedFile = null;
+
+        function openAporteModal() {
+            document.getElementById('aporteModal').style.display = 'flex';
+            // Reset form
+            document.getElementById('formAporteExterno').reset();
+            document.getElementById('aporteFecha').valueAsDate = new Date();
+            selectedFile = null;
+            document.getElementById('fileInput').value = ''; // Reset file input
+            document.getElementById('fileNameDisplay').textContent = '';
+            document.getElementById('uploadPreview').innerHTML = `
+                <span style="font-size: 2rem;">📸</span>
+                <p style="margin: 10px 0 0 0; font-weight: 500;">Clic para adjuntar recibo</p>
+                <small class="text-muted">(Imagen o PDF)</small>
+            `;
+            document.getElementById('btnEnviarAporte').disabled = true;
+
+            // Reset pasos
+            goToStep(1);
+
+            // Reset views
+            document.getElementById('formAporteExterno').style.display = 'block';
+            document.getElementById('aporteLoading').style.display = 'none';
+            document.getElementById('aporteSuccess').style.display = 'none';
+        }
+
+        function closeAporteModal() {
+            document.getElementById('aporteModal').style.display = 'none';
+            // Refrescar datos por si hubo aporte
+            if (document.getElementById('aporteSuccess').style.display === 'block') {
+                handleConsulta(new Event('submit'));
+            }
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.form-step').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.step-dot').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(`step${step}`).classList.add('active');
+            document.getElementById(`dot${step}`).classList.add('active');
+        }
+
+        function nextStep() {
+            const monto = document.getElementById('aporteMonto').value;
+            const fecha = document.getElementById('aporteFecha').value;
+
+            if (!monto || !fecha) {
+                alert('Por favor complete todos los campos.');
+                return;
+            }
+            goToStep(2);
+        }
+
+        function prevStep() {
+            goToStep(1);
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Validar tamaño (Max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('El archivo es demasiado pesado (Max 5MB).');
+                event.target.value = '';
+                return;
+            }
+
+            selectedFile = file;
+            document.getElementById('fileNameDisplay').textContent = `✅ ${file.name}`;
+            document.getElementById('btnEnviarAporte').disabled = false;
+        }
+
+        function handleAporteSubmit(e) {
+            e.preventDefault();
+
+            if (!selectedFile) {
+                alert('Debes adjuntar el comprobante obligatoriamente.');
+                return;
+            }
+
+            // Convertir a Base64 y Enviar
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const base64Data = e.target.result.split(',')[1]; // Remover header "data:image/..."
+                enviarAlBackend(base64Data);
+            };
+            reader.readAsDataURL(selectedFile);
+        }
+
+        async function enviarAlBackend(base64Data) {
+            // UI Loading
+            document.getElementById('formAporteExterno').style.display = 'none';
+            document.getElementById('aporteLoading').style.display = 'block';
+
+            const dataToSend = {
+                action: 'registrarAporteExterno',
+                cedula: currentCedula,
+                monto: document.getElementById('aporteMonto').value,
+                fecha: document.getElementById('aporteFecha').value,
+                concepto: 'Aporte desde Web',
+                fileData: base64Data,
+                fileName: selectedFile.name,
+                mimeType: selectedFile.type
+            };
+
+            try {
+                // Usamos fetch POST
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(dataToSend)
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    document.getElementById('aporteLoading').style.display = 'none';
+                    document.getElementById('aporteSuccess').style.display = 'block';
+                } else {
+                    throw new Error(result.message);
+                }
+
+            } catch (error) {
+                document.getElementById('aporteLoading').style.display = 'none';
+                document.getElementById('formAporteExterno').style.display = 'block';
+                alert('Error al registrar: ' + error.message);
+            }
+        }
     </script>
 </body>
 
