@@ -907,13 +907,19 @@
             btn.disabled = true;
 
             try {
-                // 1. Obtener Sorteo Activo
+                // 1. Obtener Sorteos Activos (Array)
                 const resp = await fetch(`${API_URL}?action=getPollaSorteoActivo`);
                 const json = await resp.json();
 
-                if (json.status === 'success' && json.data) {
-                    currentSorteo = json.data;
-                    openPollaModal();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    const sorteos = json.data;
+                    if (sorteos.length === 1) {
+                        currentSorteo = sorteos[0];
+                        openPollaModal();
+                    } else {
+                        // Selección de sorteo si hay varios
+                        renderSorteoSelector(sorteos);
+                    }
                 } else {
                     alert('No hay sorteos activos en este momento. ¡Intenta más tarde!');
                 }
@@ -926,15 +932,67 @@
             }
         }
 
+        function renderSorteoSelector(sorteos) {
+            document.getElementById('pollaModal').style.display = 'flex';
+            document.getElementById('viewSeleccionPolla').style.display = 'none';
+            document.getElementById('viewPagoPolla').style.display = 'none';
+            document.getElementById('viewMsgPolla').style.display = 'none';
+
+            // Reutilizamos viewSeleccionPolla o creamos una vista de selección
+            const mainView = document.getElementById('viewSeleccionPolla');
+            mainView.style.display = 'block';
+            mainView.innerHTML = `
+                <div class="text-center mb-4">
+                    <h3>Selecciona un Sorteo</h3>
+                    <p>Hay varios sorteos programados, elige uno para participar:</p>
+                </div>
+                <div class="sorteo-list" style="display: grid; gap: 15px;">
+                    ${sorteos.map(s => `
+                        <div class="card p-3 shadow-sm" style="cursor:pointer; border-left: 5px solid var(--primary-color);" onclick="selectSorteo(${JSON.stringify(s).replace(/"/g, '&quot;')})">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">${s.tema}</h5>
+                                    <small class="text-muted">Fecha: ${formatDate(s.fecha.substring(0, 10))}</small>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-bold">${formatCurrency(s.valor_por_numero)}</div>
+                                    <button class="btn btn-sm btn-primary">Elegir Número</button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="mt-4 text-center">
+                    <button class="btn btn-link text-muted" onclick="closePollaModal()">Cancelar</button>
+                </div>
+            `;
+        }
+
+        function selectSorteo(sorteo) {
+            currentSorteo = sorteo;
+            // Restaurar vista original
+            document.getElementById('viewSeleccionPolla').innerHTML = `
+                <div class="text-center mb-4">
+                    <h3 id="pollaInfoSorteo"></h3>
+                    <p>Toca un número para seleccionarlo. Valor: <span id="precioPolla" class="fw-bold"></span></p>
+                </div>
+                <div id="gridNumeros" style="display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; max-width: 500px; margin: 0 auto;">
+                    <!-- Se llena vía JS -->
+                </div>
+                <div id="seleccionPollaMsg" class="mt-4 text-center" style="min-height: 40px;"></div>
+            `;
+            openPollaModal();
+        }
+
         function openPollaModal() {
             document.getElementById('pollaModal').style.display = 'flex';
-            document.getElementById('pollaInfoSorteo').textContent = `Sorteo del ${formatDate(currentSorteo.fecha.substring(0, 10))} | Valor: ${formatCurrency(currentSorteo.valor_por_numero)}`;
+            document.getElementById('pollaInfoSorteo').textContent = `${currentSorteo.tema} | ${formatDate(currentSorteo.fecha.substring(0, 10))}`;
             document.getElementById('precioPolla').textContent = formatCurrency(currentSorteo.valor_por_numero);
 
             // Cargar Grid
             loadNumerosGrid();
 
-            // Reset Views
+            // Reset Views (si venimos de selectSorteo ya está, pero por si acaso)
             document.getElementById('viewSeleccionPolla').style.display = 'block';
             document.getElementById('viewPagoPolla').style.display = 'none';
             document.getElementById('viewMsgPolla').style.display = 'none';

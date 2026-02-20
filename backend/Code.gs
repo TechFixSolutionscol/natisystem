@@ -214,7 +214,9 @@ function doGet(e) {
         break;
         
       case 'getPollaData':
-        result = getPollaData();
+        result = getPollaData(e.parameter.sorteo_id, { 
+          quickUpdate: e.parameter.quickUpdate === 'true' 
+        });
         break;
 
       case 'getConsultaSocio':
@@ -3345,7 +3347,7 @@ function ensureAportesHeader() {
 
 /**
  * Crea un nuevo sorteo.
- * AHORA: Solo guarda en Polla_Config. No toca Polla_Sorteos.
+ * AHORA: Permite múltiples sorteos activos en Polla_Config.
  */
 function crearSorteoPolla(data) {
   return executeWithLock(() => {
@@ -3353,32 +3355,26 @@ function crearSorteoPolla(data) {
       const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
       const sheetConfig = ss.getSheetByName(HOJAS.POLLA_CONFIG);
 
-      // Verificar si ya hay un sorteo configurado y NO cerrado
-      const configRows = sheetConfig.getDataRange().getValues();
-      if (configRows.length > 1 && String(configRows[1][0]).trim() !== '') {
-         return { status: 'error', message: 'Ya existe un sorteo configurado. Ciérrelo antes de crear uno nuevo.' };
-      }
-
-      const id = Utilities.getUuid();
-      const valor = parseFloat(data.valor) || 10000;
+      const id = generateId();
+      const valor = parseFloat(data.monto_bolsa) ? 10000 : (parseFloat(data.valor_numero) || 10000); // Ajuste según lo que envíe el front
       const fecha = data.fecha; // YYYY-MM-DD
       const tema = data.tema || 'Polla Normal';
 
-      // Actualizar Hoja de Configuración
-      if (sheetConfig.getLastRow() > 1) {
-        sheetConfig.deleteRows(2, sheetConfig.getLastRow() - 1);
-      }
+      // Añadir nuevo sorteo activo
       sheetConfig.appendRow([id, valor, fecha, tema]);
 
-      return { status: 'success', message: 'Sorteo configurado en Polla_Config', id: id };
+      return { status: 'success', message: 'Nuevo sorteo activo creado', id: id };
     } catch (e) {
-      return { status: 'error', message: 'Error: ' + e.message };
+      return { status: 'error', message: 'Error creando sorteo: ' + e.message };
     }
   });
 }
 
 /**
  * Registra el resultado manual de un sorteo y AQUÍ es donde se guarda en el historial
+ */
+/**
+ * Registra el resultado manual de un sorteo específico y lo archiva en el historial.
  */
 function registrarResultadoManualPolla(data) {
   return executeWithLock(() => {
@@ -3388,34 +3384,49 @@ function registrarResultadoManualPolla(data) {
       const sheetNumeros = ss.getSheetByName(HOJAS.POLLA_NUMEROS);
       const sheetConfig = ss.getSheetByName(HOJAS.POLLA_CONFIG);
       
-      // 1. Obtener datos del sorteo ACTIVO desde la config
-      const configRows = sheetConfig.getDataRange().getValues();
-      if (configRows.length < 2 || String(configRows[1][0]).trim() === '') {
-        return { status: 'error', message: 'No hay sorteo activo configurado para cerrar' };
-      }
+      const targetSorteoId = data.sorteo_id;
+      const esAcumulado = String(data.numero_ganador).toUpperCase() === 'ACUMULADO';
+      const ganadorNum = esAcumulado ? 'ACUMULADO' : parseInt(data.numero_ganador);
       
-      const config = configRows[1];
-      const sorteoId = config[0];
-      const valorNumero = Number(config[1]);
-      const fechaSorteo = config[2];
+      if (!targetSorteoId) return { status: 'error', message: 'ID de sorteo no proporcionado' };
+      if (!esAcumulado && isNaN(ganadorNum)) return { status: 'error', message: 'Número ganador inválido' };
 
-      const ganadorNum = parseInt(data.numero_ganador);
-      if (isNaN(ganadorNum)) return { status: 'error', message: 'Número ganador inválido' };
+      // 1. Obtener datos del sorteo desde Polla_Config
+      const configRows = sheetConfig.getDataRange().getValues();
+      let configRowIndex = -1;
+      let configData = null;
 
-      // 2. Calcular Recaudo y marcar ganadores
+      for (let i = 1; i < configRows.length; i++) {
+        if (String(configRows[i][0]).trim() === String(targetSorteoId).trim()) {
+          configRowIndex = i + 1;
+          configData = configRows[i];
+          break;
+        }
+      }
+
+      if (!configData) return { status: 'error', message: 'Sorteo no encontrado en configuración activa' };
+      
+      const valorNumero = Number(configData[1]);
+      const fechaSorteo = configData[2];
+
+      // 2. Calcular Recaudo y marcar ganadores en Polla_Numeros
       let totalRecaudo = 0;
       let ganadorId = 'ACUMULADO';
 
       if (sheetNumeros) {
         const dataNums = sheetNumeros.getDataRange().getValues();
         for (let i = 1; i < dataNums.length; i++) {
-          if (String(dataNums[i][1]) === String(sorteoId)) {
-            const estadoPago = String(dataNums[i][4]).toUpperCase();
-            if (estadoPago === 'PAGADO') {
+          if (String(dataNums[i][4]) === String(targetSorteoId)) {
+            const estadoPolla = String(dataNums[i][5]).toUpperCase();
+            const pagado = dataNums[i][3]; // Col D (index 3)
+            
+            if (estadoPolla === 'PAGADO' || pagado === true || pagado === 'TRUE') {
               totalRecaudo += valorNumero;
-              if (parseInt(dataNums[i][2]) === ganadorNum) {
-                ganadorId = dataNums[i][3];
-                sheetNumeros.getRange(i + 1, 5).setValue('GANADOR');
+              
+              // Solo buscar ganador si NO es un cierre por acumulado (traslado al fondo)
+              if (!esAcumulado && parseInt(dataNums[i][1]) === ganadorNum) {
+                ganadorId = dataNums[i][0]; // Col A (index 0)
+                sheetNumeros.getRange(i + 1, 6).setValue('GANADOR'); // Col F (index 5 -> Column 6)
               }
             }
           }
@@ -3423,10 +3434,9 @@ function registrarResultadoManualPolla(data) {
       }
       
       // 3. ARCHIVAR EN EL HISTORIAL (Polla_Sorteos)
-      // Estructura: id, fecha, numero_ganador, id_ganador, monto_total, estado, created_at
       sheetSorteos.appendRow([
-        sorteoId,
-        new Date(fechaSorteo + "T19:00:00"),
+        targetSorteoId,
+        fechaSorteo,
         ganadorNum,
         ganadorId,
         totalRecaudo,
@@ -3434,106 +3444,156 @@ function registrarResultadoManualPolla(data) {
         new Date()
       ]);
       
-      // 4. Limpiar Configuración Activa
-      sheetConfig.getRange(2, 1, 1, 1).clearContent(); 
+      // 4. Eliminar de Polla_Config
+      sheetConfig.deleteRow(configRowIndex);
       
       return { 
           status: 'success', 
-          message: `Sorteo cerrado y archivado exitosamente. Ganador: ${ganadorId}. Recaudo: ${totalRecaudo}` 
+          message: `Sorteo ${targetSorteoId} cerrado. Ganador: ${ganadorId}. Recaudo: ${totalRecaudo}` 
       };
 
     } catch (e) {
-      return { status: 'error', message: 'Error: ' + e.message };
+      return { status: 'error', message: 'Error en registro manual: ' + e.message };
     }
   });
 }
 
 /**
- * Asigna un número de polla (Solicitud o Directo)
- * REEMPLAZA o COMPLEMENTA solicitarNumeroPolla si es necesario
+ * Asigna un número de polla (Solicitud desde Consulta o Admin)
+ * Estructura Hoja: [id_part, num, fecha_asig, pagado, sorteo_id, estado, url, fecha_solic]
  */
 function solicitarNumeroPolla(data) {
-   return executeWithLock(() => {
-     try {
-       const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-       let sheet = ss.getSheetByName('Polla_Numeros');
-       if (!sheet) {
-         sheet = ss.insertSheet('Polla_Numeros');
-         sheet.appendRow(['id', 'sorteo_id', 'numero', 'id_participante', 'estado', 'fecha_solicitud', 'comprobante_url']);
-       }
-       
-       const sorteoId = data.sorteo_id;
-       const numero = parseInt(data.numero);
-       const cedula = data.cedula; 
-       
-       // Buscar ID de participante real usando la cédula
-       let participanteId = data.cedula; // Fallback
-       const sheetPart = ss.getSheetByName(HOJAS.PARTICIPANTES);
-       if (sheetPart) {
-           const dataPart = sheetPart.getDataRange().getValues();
-           // Columna B (1) es cédula, Columna A (0) es ID
-           const socio = dataPart.find(r => String(r[2]) === String(cedula)); // ERROR: Cédula está en Col index 2 según 'agregarParticipante' (ID, Nombre, Cedula...)
-           // Revisemos 'agregarParticipante': newRow = [newId, nombre, cedula...] -> Index 2 es Cédula. Correcto.
-           
-           if (socio) {
-               participanteId = socio[0]; 
-           } else {
-               // Intentar buscar por ID directo por si acaso enviaron ID
-               const socioById = dataPart.find(r => String(r[0]) === String(cedula));
-               if (socioById) participanteId = cedula;
-               else return { status: 'error', message: 'Participante no encontrado con esa cédula' };
-           }
-       }
-       
-       // Verificar disponibilidad
-       const dataNumeros = sheet.getDataRange().getValues();
-       const ocupado = dataNumeros.some(r => String(r[1]) === String(sorteoId) && parseInt(r[2]) === numero && String(r[4]) !== 'RECHAZADO');
-       
-       if (ocupado) return { status: 'error', message: 'Número ya ocupado/reservado' };
-       
-       // Registrar
-       const nuevoId = Utilities.getUuid();
-       // Si es asignación por Admin con Pago Automático, el estado es PAGADO, sino PENDIENTE
-       const estadoInicial = (data.isAdminAssignment && data.autoPay) ? 'PAGADO' : 'PENDIENTE';
-       
-       sheet.appendRow([
-         nuevoId,
-         sorteoId,
-         numero,
-         participanteId,
-         estadoInicial,
-         new Date(),
-         data.comprobante || ''
-       ]);
-       
-       return { status: 'success', message: 'Número asignado correctamente', id: nuevoId };
-       
-     } catch (e) {
-       return { status: 'error', message: 'Error solicitando número: ' + e.message };
-     }
-   });
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.POLLA_NUMEROS);
+      
+      const numero = parseInt(data.numero);
+      const sorteoId = data.sorteo_id;
+      const cedula = data.cedula;
+
+      // 1. Validaciones de entrada
+      if (isNaN(numero) || numero < 0 || numero > 99) {
+        return { status: 'error', message: 'El número debe estar entre 00 y 99' };
+      }
+      if (!sorteoId) return { status: 'error', message: 'ID de sorteo requerido' };
+
+      // 2. Buscar Participante
+      let participanteId = cedula;
+      let nombreParticipante = "Socio";
+      const sheetPart = ss.getSheetByName(HOJAS.PARTICIPANTES);
+      if (sheetPart) {
+        const dataPart = sheetPart.getDataRange().getValues();
+        // Col 2 es Cédula (Index 2), Col 0 es ID (Index 0), Col 1 es Nombre (Index 1)
+        const socio = dataPart.find(r => String(r[2]) === String(cedula));
+        if (socio) {
+          participanteId = socio[0];
+          nombreParticipante = socio[1];
+        } else {
+          // Intentar por ID directo
+          const socioById = dataPart.find(r => String(r[0]) === String(cedula));
+          if (socioById) {
+              participanteId = cedula;
+              nombreParticipante = socioById[1];
+          } else {
+              return { status: 'error', message: 'No se encontró socio con esa identificación' };
+          }
+        }
+      }
+
+      // 3. Verificar Disponibilidad y Duplicados por Socio
+      const rows = sheet.getDataRange().getValues();
+      
+      // 3a. ¿Socio ya tiene número en este sorteo?
+      const yaTieneNumero = rows.some((r, idx) => {
+        if (idx === 0) return false;
+        
+        const rowSorteoId = String(r[4] || '').trim();
+        const reqSorteoId = String(sorteoId || '').trim();
+        const rowParticipanteId = String(r[0] || '').trim();
+        const rowEstado = String(r[5] || '').trim();
+        
+        // Coincidencia de Sorteo: ID exacto o el de la hoja está vacío (para registros previos sin ID)
+        const coincideSorteo = (rowSorteoId === reqSorteoId) || (rowSorteoId === "" && reqSorteoId !== "");
+        
+        // Coincidencia de Participante: ID interno o Cédula (retrocompatibilidad)
+        const coincideParticipante = (rowParticipanteId === String(participanteId)) || (rowParticipanteId === String(cedula));
+        
+        return coincideSorteo && coincideParticipante && rowEstado !== 'RECHAZADO';
+      });
+
+      if (yaTieneNumero) return { status: 'error', message: 'Ya tienes un número asignado o solicitado para este sorteo.' };
+
+      // 3b. ¿Número ya ocupado?
+      const ocupado = rows.some((r, idx) => {
+        if (idx === 0) return false;
+        const rowSorteoId = String(r[4] || '').trim();
+        const reqSorteoId = String(sorteoId || '').trim();
+        const coincideSorteo = (rowSorteoId === reqSorteoId) || (rowSorteoId === "" && reqSorteoId !== "");
+
+        return coincideSorteo && parseInt(r[1]) === numero && String(r[5]) !== 'RECHAZADO';
+      });
+
+      if (ocupado) return { status: 'error', message: `El número ${String(numero).padStart(2, '0')} ya está reservado o vendido.` };
+
+      // 4. Manejo de Comprobante (Drive)
+      let urlComprobante = "";
+      if (data.fileData && data.fileName) {
+          urlComprobante = saveFileToDrive(
+              data.fileData, 
+              `Polla_${String(numero).padStart(2, '0')}_${cedula}`, 
+              data.mimeType, 
+              FOLDER_ID_COMPROBANTES, 
+              nombreParticipante
+          );
+      }
+
+      // 5. Registrar (Alineado con hoja: id_part, num, fecha_asig, pagado, sorteo_id, estado, url, fecha_solic)
+      const estadoInicial = (data.isAdminAssignment && data.autoPay) ? 'PAGADO' : 'PENDIENTE';
+      const fechaAsignacion = (data.isAdminAssignment && data.autoPay) ? new Date() : null;
+      const esPagado = (data.isAdminAssignment && data.autoPay) ? true : false;
+
+      sheet.appendRow([
+        participanteId,      // A: id_participante
+        numero,              // B: numero
+        fechaAsignacion,     // C: fecha_asignacion
+        esPagado,            // D: pagado
+        sorteoId,            // E: sorteo_id
+        estadoInicial,       // F: estado_polla
+        urlComprobante,      // G: comprobante_url
+        new Date()           // H: fecha_solicitud
+      ]);
+
+      return { 
+          status: 'success', 
+          message: 'Solicitud registrada correctamente', 
+          numero: numero,
+          driveUrl: urlComprobante 
+      };
+
+    } catch (e) {
+      return { status: 'error', message: 'Error en solicitarNumeroPolla: ' + e.message };
+    }
+  });
 }
 
 /**
  * Aprueba una solicitud de número (lo marca como PAGADO)
+ * Estructura Hoja: [id_part, num, fecha_asig, pagado, sorteo_id, estado, url, fecha_solic]
  */
 function aprobarNumeroPolla(data) {
-    // data: { cedula, sorteo_id, numero }
-    // OJO: aprobarNumeroPolla original usaba cedula para buscar. Adaptemos.
-    
     return executeWithLock(() => {
         try {
             const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-            const sheet = ss.getSheetByName('Polla_Numeros');
+            const sheet = ss.getSheetByName(HOJAS.POLLA_NUMEROS);
             const rows = sheet.getDataRange().getValues();
             
             let rowIndex = -1;
             
             // Buscar la solicitud (match sorteo + numero)
             for (let i=1; i<rows.length; i++) {
-                if (String(rows[i][1]) === String(data.sorteo_id) && parseInt(rows[i][2]) === parseInt(data.numero)) {
-                    // Encontrado numero en ese sorteo
-                    // No validamos rigurosamente el usuario para permitir aprobaciones rápidas si el numero coincide
+                // E (4) es sorteo_id, B (1) es numero
+                if (String(rows[i][4]) === String(data.sorteo_id) && parseInt(rows[i][1]) === parseInt(data.numero)) {
                     rowIndex = i + 1;
                     break;
                 }
@@ -3541,8 +3601,11 @@ function aprobarNumeroPolla(data) {
             
             if (rowIndex === -1) return { status: 'error', message: 'Solicitud no encontrada' };
             
-            // Aprobar (Marcar PAGADO)
-            sheet.getRange(rowIndex, 5).setValue('PAGADO');
+            // Aprobar
+            // D (4) es pagado (BOOLEAN), F (6) es estado_polla (STRING), C (3) es fecha_asignacion
+            sheet.getRange(rowIndex, 4).setValue(true); // pagado
+            sheet.getRange(rowIndex, 6).setValue('PAGADO'); // estado
+            sheet.getRange(rowIndex, 3).setValue(new Date()); // fecha_asig
             
             return { status: 'success', message: 'Número aprobado y marcado como PAGADO' };
 
@@ -3559,12 +3622,13 @@ function rechazarNumeroPolla(data) {
     return executeWithLock(() => {
         try {
             const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-            const sheet = ss.getSheetByName('Polla_Numeros');
+            const sheet = ss.getSheetByName(HOJAS.POLLA_NUMEROS);
             const rows = sheet.getDataRange().getValues();
             
             let rowIndex = -1;
             for (let i=1; i<rows.length; i++) {
-                if (String(rows[i][1]) === String(data.sorteo_id) && parseInt(rows[i][2]) === parseInt(data.numero)) {
+                // E (4) es sorteo_id, B (1) es numero
+                if (String(rows[i][4]) === String(data.sorteo_id) && parseInt(rows[i][1]) === parseInt(data.numero)) {
                     rowIndex = i + 1;
                     break;
                 }
@@ -3572,8 +3636,8 @@ function rechazarNumeroPolla(data) {
             
             if (rowIndex === -1) return { status: 'error', message: 'Solicitud no encontrada' };
             
-            // Marcar RECHAZADO (libera el numero en la lógica de 'getNumeroDisponible')
-            sheet.getRange(rowIndex, 5).setValue('RECHAZADO');
+            // F (6) es estado_polla
+            sheet.getRange(rowIndex, 6).setValue('RECHAZADO');
             
             return { status: 'success', message: 'Solicitud rechazada.' };
 
@@ -3595,10 +3659,10 @@ function setupPolla() {
         s.appendRow(['id', 'fecha', 'numero_ganador', 'id_ganador', 'monto_total', 'estado', 'created_at']);
     }
 
-    // 2. Polla Numeros
+    // 2. Polla Numeros (Alineado con captura: A=id_part, B=num, C=fecha_asig, D=pagado, E=sorteo_id, F=estado, G=url, H=fecha_solic)
     if (!ss.getSheetByName(HOJAS.POLLA_NUMEROS)) {
         const n = ss.insertSheet(HOJAS.POLLA_NUMEROS);
-        n.appendRow(['id', 'sorteo_id', 'numero', 'id_participante', 'estado', 'fecha_solicitud', 'comprobante_url']);
+        n.appendRow(['id_participante', 'numero', 'fecha_asignacion', 'pagado', 'sorteo_id', 'estado_polla', 'comprobante_url', 'fecha_solicitud']);
     }
 
     // 3. Polla Config (Estructura Horizontal)
@@ -3615,31 +3679,34 @@ function setupPolla() {
 // ==========================================
 
 /**
- * Busca y retorna el sorteo que esté actualmente ACTIVO
- * Busca en Polla_Config primero.
+ * Busca y retorna los sorteos que estén actualmente ACTIVOS en Polla_Config
  */
 function getPollaSorteoActivo() {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheetConfig = ss.getSheetByName(HOJAS.POLLA_CONFIG);
     if (!sheetConfig || sheetConfig.getLastRow() < 2) {
-        return { status: 'success', data: null, message: 'No hay sorteo activo configurado' };
+        return { status: 'success', data: [], message: 'No hay sorteos activos' };
     }
 
-    const data = sheetConfig.getRange(2, 1, 1, 4).getValues()[0];
-    const activeId = data[0];
-
-    if (!activeId) return { status: 'success', data: null, message: 'No hay ID de sorteo activo' };
+    const data = sheetConfig.getDataRange().getValues();
+    const sorteos = [];
+    
+    for (let i = 1; i < data.length; i++) {
+        if (data[i][0]) {
+            sorteos.push({
+                id: data[i][0],
+                valor_por_numero: Number(data[i][1]) || 10000,
+                fecha: data[i][2],
+                tema: data[i][3],
+                estado: 'ACTIVO'
+            });
+        }
+    }
 
     return {
       status: 'success',
-      data: {
-        id: activeId,
-        valor_por_numero: Number(data[1]) || 10000,
-        fecha: data[2],
-        tema: data[3],
-        estado: 'ACTIVO'
-      }
+      data: sorteos // Array de sorteos
     };
   } catch (error) {
     return { status: 'error', message: `Error: ${error.message}` };
@@ -3649,7 +3716,7 @@ function getPollaSorteoActivo() {
 /**
  * Obtiene los números vendidos/reservados para un sorteo específico
  */
-function getPollaNumerosPorSorteo(sorteo_id) {
+function getPollaNumerosPorSorteo(sorteo_id, mapaParticipantesExistente = null) {
   try {
     if (!sorteo_id) return { status: 'error', message: 'ID de sorteo es requerido' };
 
@@ -3663,12 +3730,16 @@ function getPollaNumerosPorSorteo(sorteo_id) {
       return sId === reqId || (sId === '' && reqId !== '');
     });
 
-    const participantesResp = getData(HOJAS.PARTICIPANTES);
-    const mapaNombres = {};
-    if (participantesResp.status === 'success') {
-      participantesResp.data.forEach(p => {
-        mapaNombres[p.id] = p.nombre;
-      });
+    // Evitar leer participantes de nuevo si ya nos pasan el mapa
+    let mapaNombres = mapaParticipantesExistente;
+    if (!mapaNombres) {
+        mapaNombres = {};
+        const participantesResp = getData(HOJAS.PARTICIPANTES);
+        if (participantesResp.status === 'success') {
+          participantesResp.data.forEach(p => {
+            mapaNombres[p.id] = p.nombre;
+          });
+        }
     }
 
     const dataEnriquecida = numerosSorteo.map(n => {
@@ -3729,41 +3800,81 @@ function configurarTriggersPolla() {
 /**
  * Obtiene el paquete completo para el panel Admin (Sorteo Activo + Números + Historial)
  */
-function getPollaData() {
+function getPollaData(sorteo_id = null, options = {}) {
   try {
     const respSorteo = getPollaSorteoActivo();
     let numeros = [];
     
+    // 1. Mapa de nombres de participantes (LECTURA ÚNICA)
     const participantesResp = getData(HOJAS.PARTICIPANTES);
     const pMap = {};
     if (participantesResp.status === 'success') {
       participantesResp.data.forEach(p => pMap[p.id] = p.nombre);
     }
 
-    if (respSorteo.status === 'success' && respSorteo.data) {
-      const respNums = getPollaNumerosPorSorteo(respSorteo.data.id);
+    // 2. Determinar qué sorteo mostrar
+    const sorteosActivos = (respSorteo.status === 'success' && respSorteo.data) ? respSorteo.data : [];
+    
+    let mainSorteo = null;
+    if (sorteo_id) {
+        mainSorteo = sorteosActivos.find(s => String(s.id) === String(sorteo_id)) || (sorteosActivos.length > 0 ? sorteosActivos[0] : null);
+    } else {
+        mainSorteo = sorteosActivos.length > 0 ? sorteosActivos[0] : null;
+    }
+
+    if (mainSorteo) {
+      // Pasamos pMap para evitar que esta función vuelva a leer la hoja de participantes
+      const respNums = getPollaNumerosPorSorteo(mainSorteo.id, pMap);
       if (respNums.status === 'success') {
         numeros = respNums.data;
       }
     }
 
-    const respHistorial = getData(HOJAS.POLLA_SORTEOS);
+    // 3. Historial (Opcional si es update rápido)
     let sorteosHistorial = [];
-    if (respHistorial.status === 'success') {
-      sorteosHistorial = respHistorial.data.map(s => {
-        return {
-          ...s,
-          nombre_ganador: pMap[s.id_ganador] || s.id_ganador || (s.id_ganador === 'ACUMULADO' ? 'ACUMULADO' : 'N/A')
+    const isQuick = options.quickUpdate === true || options.quickUpdate === 'true';
+
+    if (!isQuick) {
+        const respHistorial = getData(HOJAS.POLLA_SORTEOS);
+        if (respHistorial.status === 'success') {
+          sorteosHistorial = respHistorial.data.map(s => {
+            return {
+              ...s,
+              nombre_ganador: pMap[s.id_ganador] || s.id_ganador || (s.id_ganador === 'ACUMULADO' ? 'ACUMULADO' : 'N/A')
+            };
+          });
+        }
+    }
+
+    // 4. Obtener último resultado de lotería (solo si no es quickUpdate)
+    let ultimoResultado = null;
+    if (!isQuick) {
+      ultimoResultado = getResultadoLoteriaMedellin();
+    }
+
+    // 5. Determinar el último ganador real de la polla (del historial)
+    let ultimoGanadorSistema = null;
+    if (sorteosHistorial.length > 0) {
+        // El historial en Code.gs se guarda con appendRow([id, fecha, numero, ...])
+        // El getData suele devolverlos en orden de inserción. El último es el más reciente.
+        const ultimoSorteo = sorteosHistorial[sorteosHistorial.length - 1];
+        ultimoGanadorSistema = {
+            numero: ultimoSorteo.numero_ganador || ultimoSorteo.ganadorNum || (ultimoSorteo[2] ? ultimoSorteo[2] : null),
+            ganador: ultimoSorteo.nombre_ganador,
+            fecha: ultimoSorteo.fecha
         };
-      });
     }
 
     return {
       status: 'success',
       data: {
-        sorteoActivo: respSorteo.data,
+        sorteoActivo: mainSorteo,
+        sorteosActivos: sorteosActivos,
         numeros: numeros,
-        sorteos: sorteosHistorial
+        sorteos: sorteosHistorial,
+        ultimoResultado: ultimoResultado,
+        ultimoGanadorSistema: ultimoGanadorSistema,
+        isQuickUpdate: isQuick
       }
     };
   } catch (error) {

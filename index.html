@@ -328,10 +328,23 @@
                     <h1>La Polla Loca</h1>
                     <div class="header-actions">
                         <button class="btn btn-warning" id="btnNotificarPolla">📢 Notificar Pendientes</button>
-                        <button class="btn btn-secondary" id="btnSorteoPolla">🎲 Registrar Sorteo</button>
+                        <button class="btn btn-success" id="btnNuevoSorteo">🎱 Nuevo Sorteo</button>
+                        <button class="btn btn-secondary" id="btnCerrarSorteo">🏆 Cerrar Seleccionado</button>
                         <button class="btn btn-primary" id="btnAsignarPolla">+ Asignar Número</button>
                     </div>
                 </header>
+
+                <div class="card mb-3" id="sorteoActivoSelectorCard" style="display: none;">
+                    <div class="card-body py-2">
+                        <div class="d-flex align-items-center gap-3">
+                            <strong>📅 Gestionar Sorteo:</strong>
+                            <select id="selectSorteoActivoAdmin" class="form-select" style="max-width: 300px;"
+                                onchange="cambiarSorteoAdmin(this.value)">
+                                <!-- Opciones cargadas vía JS -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="stats-grid">
                     <div class="stat-card stat-info">
@@ -344,8 +357,15 @@
                     <div class="stat-card stat-primary">
                         <div class="stat-icon">📅</div>
                         <div class="stat-content">
-                            <h3 class="stat-label">Próximo Sorteo</h3>
+                            <h3 class="stat-label">Fecha del Juego</h3>
                             <p class="stat-value" id="pollaFecha">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-success">
+                        <div class="stat-icon">🏆</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Último Ganador (Oficial)</h3>
+                            <p class="stat-value" id="pollaUltimoGanador">---</p>
                         </div>
                     </div>
                 </div>

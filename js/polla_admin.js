@@ -12,17 +12,19 @@ async function initPollaDashboard() {
     console.log("Inicializando Dashboard Polla...");
     startLoading();
 
-    // Cargamos todo el paquete de datos de una vez
+    // loadFullPollaData ya se encarga de cargar los participantes de forma eficiente
     await loadFullPollaData();
 
     stopLoading();
 
     // Listeners botones principales
-    const btnSorteo = document.getElementById('btnSorteoPolla');
+    const btnNuevoSorteo = document.getElementById('btnNuevoSorteo');
+    const btnCerrarSorteo = document.getElementById('btnCerrarSorteo');
     const btnAsignar = document.getElementById('btnAsignarPolla');
     const btnNotificar = document.getElementById('btnNotificarPolla');
 
-    if (btnSorteo) btnSorteo.onclick = abrirModalGestionSorteo;
+    if (btnNuevoSorteo) btnNuevoSorteo.onclick = abrirModalCrearSorteo;
+    if (btnCerrarSorteo) btnCerrarSorteo.onclick = abrirModalCerrarSorteo;
     if (btnAsignar) btnAsignar.onclick = abrirModalAsignarNumero;
     if (btnNotificar) btnNotificar.onclick = notificarPendientes;
 }
@@ -62,9 +64,21 @@ async function fetchBackend(action, params = {}) {
     if (
         action.startsWith('get')
     ) {
-        // Usar GET
-        const queryParams = new URLSearchParams(params).toString();
-        const getUrl = `${API_URL}?action=${action}&${queryParams}`;
+        // Usar GET - Aplanamos los parámetros para que funcionen con URLSearchParams
+        const flatParams = { action };
+        for (const key in params) {
+            if (typeof params[key] === 'object' && params[key] !== null) {
+                // Aplanar opciones anidadas como quickUpdate
+                for (const subKey in params[key]) {
+                    flatParams[subKey] = params[key][subKey];
+                }
+            } else {
+                flatParams[key] = params[key];
+            }
+        }
+
+        const queryParams = new URLSearchParams(flatParams).toString();
+        const getUrl = `${API_URL}?${queryParams}`;
         const response = await fetch(getUrl);
         return await response.json();
     } else {
@@ -87,20 +101,28 @@ async function fetchBackend(action, params = {}) {
 // 1. CARGA DE DATOS GENERALES
 // ----------------------------------------------------
 
-async function loadFullPollaData() {
+async function loadFullPollaData(requestedId = null, isQuick = false) {
     try {
-        // Asegurar cache de participantes
+        // Asegurar cache de participantes (solo si está vacío)
         await cargarListaParticipantesGlobal();
 
-        const result = await fetchBackend('getPollaData');
+        // Si no nos pasan un ID, usamos el que ya tenemos seleccionado
+        const targetId = requestedId || (currentSorteoAdmin ? currentSorteoAdmin.id : null);
+
+        // Llamamos al backend con opción de modo rápido si es una actualización de rutina
+        // Pasamos parámetros planos para evitar problemas con URLSearchParams
+        const result = await fetchBackend('getPollaData', {
+            sorteo_id: targetId,
+            quickUpdate: isQuick
+        });
 
         if (result.status === 'success') {
             const data = result.data;
 
-            // 1. Manejar Sorteo Activo
-            onSorteoActivoUIUpdate(data.sorteoActivo);
+            // 1. Manejar Sorteos Activos (con protección de renderizado)
+            onSorteoActivoUIUpdate(data.sorteoActivo, data.sorteosActivos);
 
-            // 2. Manejar Tabla de Números (si hay sorteo activo)
+            // 2. Manejar Tabla de Números
             if (data.sorteoActivo) {
                 renderTablaNumeros({ status: 'success', data: data.numeros });
             } else {
@@ -109,9 +131,14 @@ async function loadFullPollaData() {
                 document.getElementById('countFilteredPolla').textContent = "100";
             }
 
-            // 3. Manejar Historial
-            if (typeof renderPollaHistory === 'function') {
+            // 3. Manejar Historial (solo si no es quick update)
+            if (!data.isQuickUpdate && typeof renderPollaHistory === 'function') {
                 renderPollaHistory(data.sorteos);
+            }
+
+            // 4. Manejar Último Resultado y Ganador del Sistema
+            if (!data.isQuickUpdate) {
+                updateUltimoGanadorUI(data.ultimoResultado, data.ultimoGanadorSistema);
             }
 
         } else {
@@ -123,22 +150,66 @@ async function loadFullPollaData() {
     }
 }
 
-function onSorteoActivoUIUpdate(sorteoActivo) {
-    if (sorteoActivo && sorteoActivo.id) {
-        currentSorteoAdmin = sorteoActivo;
-        document.getElementById('pollaFecha').textContent = formatDate(sorteoActivo.fecha);
-        document.getElementById('btnSorteoPolla').textContent = "🏆 Registrar Resultado / Cerrar";
+function onSorteoActivoUIUpdate(sorteoActivo, sorteosActivos = []) {
+    const selectorCard = document.getElementById('sorteoActivoSelectorCard');
+    const selectSorteo = document.getElementById('selectSorteoActivoAdmin');
+
+    if (sorteosActivos.length > 0) {
+        selectorCard.style.display = 'block';
+
+        // --- PROTECCIÓN DE SELECTOR ---
+        // Solo reconstruir el HTML del selector si la cantidad de sorteos cambió o si está vacío.
+        // Esto evita que se "pierda" el foco o se resetee la selección visual mientras el usuario lo mira.
+        const currentOptionsCount = selectSorteo.options.length;
+        if (currentOptionsCount !== sorteosActivos.length) {
+            selectSorteo.innerHTML = sorteosActivos.map(s => `
+                <option value="${s.id}" ${s.id === (sorteoActivo ? sorteoActivo.id : '') ? 'selected' : ''}>
+                    ${s.tema} (${formatDate(s.fecha)})
+                </option>
+            `).join('');
+        }
+
+        // Sincronizar el estado global con lo que el servidor dice que es "activo" o lo que el usuario eligió
+        const currentActiveId = sorteoActivo ? sorteoActivo.id : (selectSorteo.value || sorteosActivos[0].id);
+        const selectedSorteo = sorteosActivos.find(s => String(s.id) === String(currentActiveId)) || sorteosActivos[0];
+
+        currentSorteoAdmin = selectedSorteo;
+        if (selectSorteo.value !== String(currentSorteoAdmin.id)) {
+            selectSorteo.value = currentSorteoAdmin.id;
+        }
+
+        document.getElementById('pollaFecha').textContent = formatDate(selectedSorteo.fecha);
+        document.getElementById('btnCerrarSorteo').disabled = false;
         document.getElementById('btnAsignarPolla').disabled = false;
+
     } else {
+        // No hay sorteos activos
+        selectorCard.style.display = 'none';
         currentSorteoAdmin = null;
         document.getElementById('pollaFecha').textContent = "No hay sorteo activo";
-        document.getElementById('btnSorteoPolla').textContent = "📅 Crear Nuevo Sorteo";
+        document.getElementById('btnCerrarSorteo').disabled = true;
         document.getElementById('btnAsignarPolla').disabled = true;
     }
 }
 
+async function cambiarSorteoAdmin(sorteoId) {
+    if (!sorteoId) return;
+    startLoading();
+    try {
+        // Simplemente recargamos todo el paquete de datos para ese ID.
+        // Esto actualizará tabla, bolsa, fecha y selector de forma atómica.
+        await loadFullPollaData(sorteoId);
+    } catch (e) {
+        handleError(e);
+    } finally {
+        stopLoading();
+    }
+}
+
 async function cargarSorteoActivo() {
-    await loadFullPollaData();
+    // Cuando forzamos recarga tras cerrar/crear, no pasamos ID para que el Back
+    // elija el primero disponible o el nuevo.
+    await loadFullPollaData(null, false);
 }
 
 async function cargarTablaNumeros(sorteoId) {
@@ -179,15 +250,24 @@ function renderTablaNumeros(result) {
 
         if (data) {
             contadorFiltrados++;
-            const estado = data.estado_polla || 'PENDIENTE';
+            const estado = String(data.estado_polla || 'PENDIENTE').toUpperCase();
+            const esPagado = data.pagado === true || data.pagado === 'TRUE' || estado === 'PAGADO';
+
             let badgeClass = 'bg-warning text-dark';
-            if (estado === 'PAGADO') {
+            if (esPagado) {
                 badgeClass = 'bg-success';
                 totalVendidos++;
-                totalRecaudado += valorNumero;
+                totalRecaudado += Number(valorNumero);
             }
             if (estado === 'RECHAZADO') badgeClass = 'bg-danger';
-            if (estado === 'GANADOR') badgeClass = 'bg-info text-dark';
+            if (estado === 'GANADOR') {
+                badgeClass = 'bg-info text-dark';
+                // El ganador también suma a la bolsa (fue vendido)
+                if (!esPagado) {
+                    totalVendidos++;
+                    totalRecaudado += Number(valorNumero);
+                }
+            }
 
             row.innerHTML = `
                 <td><strong>${numStr}</strong></td>
@@ -214,6 +294,46 @@ function renderTablaNumeros(result) {
     document.getElementById('countFilteredPolla').textContent = contadorFiltrados > 0 ? contadorFiltrados : 100;
 }
 
+/**
+ * Actualiza la UI con el último resultado oficial
+ */
+/**
+ * Actualiza la UI con el último resultado de la polla o de la lotería
+ */
+function updateUltimoGanadorUI(oficial, sistema) {
+    const el = document.getElementById('pollaUltimoGanador');
+    if (!el) return;
+
+    // Priorizamos mostrar quién ganó la última polla
+    if (sistema && sistema.numero) {
+        el.innerHTML = `
+            <div style="line-height: 1.2;">
+                <span style="color: var(--success-color); font-size: 1.1em; font-weight: bold; letter-spacing: 1px;">
+                    ${sistema.numero}
+                </span>
+                <div style="font-size: 0.65em; color: var(--text-muted); text-transform: uppercase; margin-top: 2px;">
+                    ${sistema.ganador === 'ACUMULADO' ? '💰 ACUMULADO' : '👤 ' + sistema.ganador}
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // Fallback: Mostrar resultado oficial si no hay registro del sistema aún
+    if (oficial && oficial.numero) {
+        el.innerHTML = `
+            <span style="color: var(--accent-color); font-size: 1.1em; letter-spacing: 2px;">
+                ${oficial.numero}
+            </span>
+            <span style="font-size: 0.6em; color: var(--text-muted); margin-left:8px;">
+                Serie: ${oficial.serie || '---'}
+            </span>
+        `;
+    } else {
+        el.textContent = "Sin datos";
+    }
+}
+
 function getActionButtons(data) {
     const json = JSON.stringify(data).replace(/"/g, '&quot;');
     if (data.estado_polla === 'PENDIENTE') {
@@ -231,17 +351,19 @@ function getActionButtons(data) {
 // 2. GESTIÓN DE SORTEOS
 // ----------------------------------------------------
 
-function abrirModalGestionSorteo() {
-    if (currentSorteoAdmin) {
-        document.getElementById('pollaResultadoFecha').value = formatDate(currentSorteoAdmin.fecha);
-        document.getElementById('pollaResultadoId').value = currentSorteoAdmin.id;
-        document.getElementById('pollaNumeroGanador').value = '';
-        document.getElementById('modalPollaResultado').style.display = 'block';
-    } else {
-        const proximoViernes = getNextFriday();
-        document.getElementById('nuevoSorteoFecha').valueAsDate = proximoViernes;
-        document.getElementById('modalCrearSorteo').style.display = 'block';
-    }
+function abrirModalCrearSorteo() {
+    const proximoViernes = getNextFriday();
+    document.getElementById('nuevoSorteoFecha').valueAsDate = proximoViernes;
+    document.getElementById('modalCrearSorteo').style.display = 'block';
+}
+
+function abrirModalCerrarSorteo() {
+    if (!currentSorteoAdmin) return alert("Seleccione un sorteo activo para cerrar.");
+
+    document.getElementById('pollaResultadoFecha').value = formatDate(currentSorteoAdmin.fecha);
+    document.getElementById('pollaResultadoId').value = currentSorteoAdmin.id;
+    document.getElementById('pollaNumeroGanador').value = '';
+    document.getElementById('modalPollaResultado').style.display = 'block';
 }
 
 // Submit Crear Sorteo
@@ -298,7 +420,12 @@ document.getElementById('formPollaResultado').onsubmit = async function (e) {
 // 3. ASIGNACIÓN MANUAL DE NÚMEROS
 // ----------------------------------------------------
 
-async function cargarListaParticipantesGlobal() {
+async function cargarListaParticipantesGlobal(force = false) {
+    // Si ya tenemos cache y no forzamos, no recargar (ahorra tiempo y datos)
+    if (globalParticipantesCache && globalParticipantesCache.length > 0 && !force) {
+        return;
+    }
+
     try {
         const res = await fetchBackend('getParticipantes');
         if (res.status === 'success') {
