@@ -10,7 +10,7 @@
  * ⚠️ IMPORTANTE: Reemplaza este ID con el ID de tu Google Sheet
  * El ID se encuentra en la URL del Sheet entre /d/ y /edit
  */
-const SPREADSHEET_ID = "TU_ID_DE_GOOGLE_SHEET_AQUI";
+const SPREADSHEET_ID = "1sWL7OTp-RELJRyI9Cbok8UdlhpmfDXlXdlTM3ktm7jA";
 
 /**
  * Nombres de las hojas en Google Sheets
@@ -32,125 +32,10 @@ const HOJAS = {
 };
 
 // ==========================================
-// FUNCIÓN DE PRUEBA (EJECUTAR DESDE EL EDITOR)
-// ==========================================
-
-/**
- * FUNCIÓN DE PRUEBA - Ejecuta esta función desde el editor de Apps Script
- * para inicializar la base de datos sin necesidad de usar la URL
- * 
- * Instrucciones:
- * 1. Selecciona "testInicializar" en el menú desplegable de funciones
- * 2. Haz clic en el botón ▶️ Ejecutar
- * 3. Autoriza los permisos si te lo pide
- * 4. Revisa los logs para ver el resultado
- */
-function testInicializar() {
-  Logger.log('=== INICIANDO PRUEBA DE INICIALIZACIÓN ===');
-  
-  // Verificar que el SPREADSHEET_ID esté configurado
-  if (SPREADSHEET_ID === "TU_ID_DE_GOOGLE_SHEET_AQUI") {
-    Logger.log('❌ ERROR: Debes configurar el SPREADSHEET_ID en la línea 13');
-    Logger.log('Instrucciones:');
-    Logger.log('1. Abre tu Google Sheet');
-    Logger.log('2. Copia el ID de la URL (entre /d/ y /edit)');
-    Logger.log('3. Reemplaza "TU_ID_DE_GOOGLE_SHEET_AQUI" con tu ID');
-    return;
-  }
-  
-  Logger.log('SPREADSHEET_ID configurado: ' + SPREADSHEET_ID);
-  
-  // Ejecutar la inicialización
-  const resultado = inicializarBaseDatos();
-  
-  // Mostrar resultado
-  Logger.log('=== RESULTADO ===');
-  Logger.log('Status: ' + resultado.status);
-  Logger.log('Mensaje: ' + resultado.message);
-  
-  if (resultado.detalles) {
-    Logger.log('Detalles:');
-    resultado.detalles.forEach(function(detalle) {
-      Logger.log('  - ' + detalle);
-    });
-  }
-  
-  if (resultado.status === 'success') {
-    Logger.log('✅ ¡Base de datos inicializada correctamente!');
-    Logger.log('Ahora puedes usar el sistema con estas credenciales:');
-    Logger.log('Email: admin@natillera.com');
-    Logger.log('Password: admin123');
-  } else {
-    Logger.log('❌ Error: ' + resultado.message);
-  }
-}
-
-/**
- * FUNCIÓN DE PRUEBA - Verifica que el usuario admin existe
- * Ejecuta esta función para ver si el usuario admin fue creado correctamente
- */
-function testVerificarUsuarios() {
-  Logger.log('=== VERIFICANDO USUARIOS ===');
-  
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    Logger.log('✅ Spreadsheet abierto correctamente');
-    
-    const sheet = ss.getSheetByName(HOJAS.USUARIOS);
-    if (!sheet) {
-      Logger.log('❌ ERROR: La hoja "Usuarios" no existe');
-      return;
-    }
-    
-    Logger.log('✅ Hoja "Usuarios" encontrada');
-    
-    const lastRow = sheet.getLastRow();
-    Logger.log('Última fila con datos: ' + lastRow);
-    
-    if (lastRow < 2) {
-      Logger.log('⚠️ ADVERTENCIA: La hoja solo tiene encabezados, no hay usuarios');
-      Logger.log('Ejecuta testInicializar para crear el usuario admin');
-      return;
-    }
-    
-    const data = sheet.getDataRange().getValues();
-    Logger.log('Total de filas leídas: ' + data.length);
-    
-    const headers = data[0];
-    Logger.log('Encabezados: ' + JSON.stringify(headers));
-    
-    const rows = data.slice(1);
-    Logger.log('Total de usuarios: ' + rows.length);
-    
-    rows.forEach(function(row, index) {
-      Logger.log('Usuario ' + (index + 1) + ':');
-      Logger.log('  ID: ' + row[0]);
-      Logger.log('  Email: ' + row[1]);
-      Logger.log('  Password: ' + row[2]);
-      Logger.log('  Nombre: ' + row[3]);
-      Logger.log('  Rol: ' + row[4]);
-    });
-    
-    // Probar getData
-    Logger.log('\n=== PROBANDO FUNCIÓN getData ===');
-    const resultado = getData(HOJAS.USUARIOS);
-    Logger.log('Status: ' + resultado.status);
-    if (resultado.status === 'success') {
-      Logger.log('Usuarios encontrados: ' + resultado.data.length);
-      Logger.log('Datos: ' + JSON.stringify(resultado.data));
-    } else {
-      Logger.log('Error: ' + resultado.message);
-    }
-    
-  } catch (error) {
-    Logger.log('❌ ERROR: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-  }
-}
-
-// ==========================================
 // FUNCIONES PRINCIPALES - ENDPOINTS
 // ==========================================
+// 💡 Las funciones de inicialización y lanzamiento están en DbSetup.gs
+//    Ejecuta testInicializar() desde el editor para lanzar el sistema.
 
 /**
  * Maneja las peticiones GET
@@ -1258,45 +1143,7 @@ function registrarPagoPrestamo(data) {
 // FUNCIONES DE CÁLCULO Y GESTIÓN
 // ==========================================
 
-/**
- * Calcula y distribuye las ganancias del ciclo
- * AHORA BASADO EN MOVIMIENTOS REALES (Principio de Caja)
- */
-/**
- * Actualiza el esquema de distribución automáticamente
- * Asegura que existan las configuraciones y columnas necesarias
- */
-function actualizarEsquemaDistribucion() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  // 1. Verificar Configuración Global
-  const sheetConfig = ss.getSheetByName(HOJAS.CONFIG);
-  if (sheetConfig) {
-    const data = sheetConfig.getDataRange().getValues();
-    let existeMetodo = false;
-    for (let i = 0; i < data.length; i++) {
-        if (data[i][0] === 'METODO_DISTRIBUCION') {
-            existeMetodo = true;
-            break;
-        }
-    }
-    if (!existeMetodo) {
-        sheetConfig.appendRow(['METODO_DISTRIBUCION', 'EQUITATIVA']);
-    }
-  }
-
-  // 2. Verificar Columna en Participantes (Para método Manual)
-  const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
-  if (sheetParticipantes) {
-      const headers = sheetParticipantes.getRange(1, 1, 1, sheetParticipantes.getLastColumn()).getValues()[0];
-      const headerIndex = headers.indexOf('porcentaje_participacion');
-      if (headerIndex === -1) {
-          // Agregar columna al final si no existe
-          const lastCol = sheetParticipantes.getLastColumn();
-          sheetParticipantes.getRange(1, lastCol + 1).setValue('porcentaje_participacion');
-      }
-  }
-}
+// 💡 actualizarEsquemaDistribucion() → movida a DbSetup.gs
 
 /**
  * Calcula y distribuye las ganancias del ciclo
@@ -1743,34 +1590,7 @@ function motorCausacionInteres() {
   }
 }
 
-/**
- * Configura el trigger diario para el motor de interés
- * Ejecutar UNA SOLA VEZ manualmente desde el frontend o desde el editor de scripts
- */
-function configurarTriggers() {
-  try {
-    // Eliminar triggers existentes para evitar duplicados
-    const triggers = ScriptApp.getProjectTriggers();
-    triggers.forEach(t => {
-      if (t.getHandlerFunction() === 'motorCausacionInteres') {
-        ScriptApp.deleteTrigger(t);
-      }
-    });
-
-    // Crear nuevo trigger: Diario a la 1:00 AM
-    ScriptApp.newTrigger('motorCausacionInteres')
-      .timeBased()
-      .everyDays(1)
-      .atHour(1)
-      .create();
-
-    Logger.log('Trigger configurado correctamente');
-    return { status: 'success', message: 'Trigger configurado correctamente (Diario 1:00 AM)' };
-  } catch (error) {
-    Logger.log('Error al configurar trigger: ' + error.message);
-    return { status: 'error', message: 'Error al configurar trigger: ' + error.message };
-  }
-}
+// 💡 configurarTriggers() → movida a DbSetup.gs
 
 /**
  * Gestiona estados de participantes (Liquidar, Eliminar)
@@ -2139,131 +1959,9 @@ function cerrarCiclo() {
 // ==========================================
 // FUNCIONES DE INICIALIZACIÓN
 // ==========================================
-
-/**
- * Inicializa la base de datos creando las hojas necesarias
- * @returns {Object} Resultado de la operación
- */
-function inicializarBaseDatos() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const mensajes = [];
-    
-    // Definir encabezados para cada hoja
-    const hojas = {
-      'Usuarios': ['id', 'email', 'password_hash', 'nombre', 'rol', 'created_at'],
-      'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia', 'frecuencia_pago', 'config_pago'],
-      'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora'],
-      'Actividades': ['id', 'nombre', 'descripcion', 'monto_generado', 'fecha', 'responsable', 'estado', 'created_at'],
-      'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at', 'fiador_id'],
-      'Movimientos_Prestamos': ['id', 'prestamo_id', 'fecha', 'tipo', 'monto', 'saldo_resultante_capital', 'saldo_resultante_interes', 'created_at'], // NUEVA TABLA
-      'Pagos_Intereses': ['id', 'prestamo_id', 'monto_interes', 'fecha_pago', 'estado', 'created_at'], // (Legacy) Se mantendrá por compatibilidad histórica
-      'Ganancias_Distribuidas': ['id', 'participante_id', 'actividad_id', 'monto_ganancia', 'fecha_distribucion', 'tipo', 'created_at'],
-      'Ciclos': ['id', 'nombre', 'fecha_inicio', 'fecha_cierre', 'total_recaudado', 'total_ganancias', 'total_intereses', 'estado', 'created_at'],
-      'Polla_Numeros': ['id_participante', 'numero', 'fecha_asignacion', 'pagado'],
-      'Polla_Sorteos': ['id', 'fecha', 'numero_ganador', 'id_ganador', 'monto_total', 'estado', 'created_at'],
-      'Config': ['clave', 'valor', 'descripcion']
-    };
-    
-    // Crear o verificar cada hoja
-    Object.keys(hojas).forEach(nombreHoja => {
-      let sheet = ss.getSheetByName(nombreHoja);
-      
-      if (!sheet) {
-        sheet = ss.insertSheet(nombreHoja);
-        sheet.getRange(1, 1, 1, hojas[nombreHoja].length).setValues([hojas[nombreHoja]]);
-        sheet.setFrozenRows(1);
-        mensajes.push(`Hoja '${nombreHoja}' creada`);
-        
-        // Valores iniciales para Config
-        if (nombreHoja === 'Config') {
-          sheet.appendRow(['APORTE_MINIMO', '30000', 'Monto mínimo mensual de aporte']);
-          sheet.appendRow(['MORA_DIARIA', '3000', 'Valor de la mora por cada día de retraso']);
-          sheet.appendRow(['DIAS_PAGO', '15,30', 'Días hábiles para pago sin mora (separados por coma)']);
-        }
-      } else {
-        // Verificar si faltan columnas y agregarlas (Migración suave - NO DESTRUCTIVA)
-        const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        const targetHeaders = hojas[nombreHoja];
-        
-        targetHeaders.forEach((header, index) => {
-          if (!currentHeaders.includes(header)) {
-            // Agregar al final
-            sheet.getRange(1, currentHeaders.length + 1).setValue(header);
-            currentHeaders.push(header); // Actualizar lista local para siguientes iteraciones
-            mensajes.push(`Columna '${header}' agregada a la hoja '${nombreHoja}'`);
-          }
-        });
-        mensajes.push(`Hoja '${nombreHoja}' verificada`);
-      }
-    });
-    
-    // Crear usuario admin por defecto si no existe
-    const usuarios = getData(HOJAS.USUARIOS);
-    if (usuarios.status === 'success' && usuarios.data.length === 0) {
-      const sheetUsuarios = ss.getSheetByName(HOJAS.USUARIOS);
-      sheetUsuarios.appendRow([
-        'ID-ADMIN',
-        'admin@natillera.com',
-        'admin123',
-        'Administrador',
-        'admin',
-        new Date()
-      ]);
-      mensajes.push('Usuario admin creado (email: admin@natillera.com, password: admin123)');
-    }
-    
-    return {
-      status: 'success',
-      message: 'Base de datos inicializada',
-      detalles: mensajes
-    };
-    
-  } catch (error) {
-    return {
-      status: 'error',
-      message: `Error al inicializar base de datos: ${error.message}`
-    };
-  }
-}
-
-/**
- * FUNCIÓN DE EMERGENCIA - Úsala si los nuevos campos no aparecen en la grilla
- * Esta función actualiza los encabezados de las hojas sin borrar datos.
- */
-function corregirBaseDatos() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const hojas = {
-    'Participantes': ['id', 'nombre', 'cedula', 'telefono', 'email', 'total_aportado', 'ganancias_acumuladas', 'activo', 'fecha_ingreso', 'dia_pago_acordado', 'mora_por_dia', 'frecuencia_pago', 'config_pago'],
-    'Aportes': ['id', 'participante_id', 'monto', 'fecha', 'concepto', 'comprobante', 'created_at', 'dias_retraso', 'monto_mora'],
-    'Prestamos': ['id', 'participante_id', 'monto_prestado', 'tasa_interes', 'fecha_prestamo', 'fecha_vencimiento', 'interes_generado', 'saldo_pendiente', 'estado', 'created_at', 'fiador_id']
-  };
-
-  const resultados = [];
-
-  Object.keys(hojas).forEach(nombreHoja => {
-    const sheet = ss.getSheetByName(nombreHoja);
-    if (sheet) {
-      const headersActuales = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const nuevosHeaders = hojas[nombreHoja];
-      
-      // Solo actualizamos si faltan columnas
-      nuevosHeaders.forEach(header => {
-         if (!headersActuales.includes(header)) {
-             sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
-             resultados.push(`✅ Columna '${header}' agregada a '${nombreHoja}'.`);
-         }
-      });
-    }
-  });
-
-  return { status: 'success', detalles: resultados };
-}
-
-function testCorregirBaseDatos() {
-  const res = corregirBaseDatos();
-  Logger.log(JSON.stringify(res));
-}
+// 💡 inicializarBaseDatos(), corregirBaseDatos(), resetBaseDatos()
+//    y funciones de prueba → todas en DbSetup.gs
+//    El esquema oficial de hojas y columnas también está en DbSetup.gs.
 
 // ==========================================
 // GESTIÓN DE USUARIOS
@@ -2397,41 +2095,7 @@ function updateConfig(data) {
   }
 }
 
-/**
- * Resetea la base de datos (borra todos los datos excepto encabezados)
- */
-function resetBaseDatos() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const mensajes = [];
-    
-    // Obtenemos todas las claves de las hojas para iterar
-    Object.keys(HOJAS).forEach(key => {
-      const nombreHoja = HOJAS[key];
-      const sheet = ss.getSheetByName(nombreHoja);
-      
-      if (sheet) {
-        const lastRow = sheet.getLastRow();
-        if (lastRow > 1) {
-          // Eliminamos desde la fila 2 hasta la última fila
-          sheet.deleteRows(2, lastRow - 1);
-          mensajes.push(`Hoja '${nombreHoja}' reseteada: ${lastRow - 1} filas eliminadas`);
-        } else {
-          mensajes.push(`Hoja '${nombreHoja}' ya estaba vacía`);
-        }
-      }
-    });
-
-    return { 
-      status: 'success', 
-      message: 'Base de datos reseteada correctamente. Todos los datos han sido eliminados manteniendo los encabezados.',
-      detalles: mensajes
-    };
-    
-  } catch (error) {
-    return { status: 'error', message: `Error al resetear base de datos: ${error.message}` };
-  }
-}
+// 💡 resetBaseDatos() → movida a DbSetup.gs
 
 // ==========================================
 // AUTOMATIZACIÓN DE MULTAS - LOGICA INDIVIDUAL
@@ -3294,52 +2958,7 @@ function rechazarAporte(aporteId) {
     });
 }
 
-/**
- * FUNCIÓN PARA FORZAR LA SOLICITUD DE PERMISOS DE ESCRITURA
- * Ejecuta esta función manualmente desde el editor
- */
-function testPermissions() {
-  Logger.log('Probando permisos de ESCRITURA...');
-  
-  // 1. Permiso de Hoja de Cálculo
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  Logger.log('Hoja: ' + ss.getName());
-  
-  // 2. Permiso de Drive (Crear archivo para forzar scope de escritura)
-  const folder = DriveApp.getRootFolder();
-  const file = folder.createFile('prueba_permisos_natisystem.txt', 'Si lees esto, los permisos funcionan.');
-  Logger.log('Archivo creado: ' + file.getUrl());
-  
-  // Limpieza
-  file.setTrashed(true);
-  
-  return '¡EXITO! Permisos de ESCRITURA Otorgados Correctamente.';
-}
-
-/**
- * Se asegura que la hoja Aportes tenga la columna "estado"
- */
-function ensureAportesHeader() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.APORTES);
-    if (!sheet) return;
-
-    if (sheet.getLastColumn() > 0) {
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
-      
-      if (!lowerHeaders.includes('estado')) {
-        sheet.getRange(1, headers.length + 1).setValue('estado');
-      }
-    } else {
-        // Hoja vacía
-        sheet.getRange(1, 10).setValue('estado');
-    }
-  } catch (e) {
-    Logger.log('Error asegurando headers: ' + e.message);
-  }
-}
+// 💡 testPermissions() y ensureAportesHeader() → movidas a DbSetup.gs
 
 // ==========================================
 // FUNCIONES DE LA POLLA LOCA - SORTEOS Y NÚMEROS
@@ -3647,32 +3266,7 @@ function rechazarNumeroPolla(data) {
     });
 }
 
-/**
- * MIGRACION Y SETUP POLLA
- */
-function setupPolla() {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    
-    // 1. Polla Sorteos (Historial corregido)
-    if (!ss.getSheetByName(HOJAS.POLLA_SORTEOS)) {
-        const s = ss.insertSheet(HOJAS.POLLA_SORTEOS);
-        s.appendRow(['id', 'fecha', 'numero_ganador', 'id_ganador', 'monto_total', 'estado', 'created_at']);
-    }
-
-    // 2. Polla Numeros (Alineado con captura: A=id_part, B=num, C=fecha_asig, D=pagado, E=sorteo_id, F=estado, G=url, H=fecha_solic)
-    if (!ss.getSheetByName(HOJAS.POLLA_NUMEROS)) {
-        const n = ss.insertSheet(HOJAS.POLLA_NUMEROS);
-        n.appendRow(['id_participante', 'numero', 'fecha_asignacion', 'pagado', 'sorteo_id', 'estado_polla', 'comprobante_url', 'fecha_solicitud']);
-    }
-
-    // 3. Polla Config (Estructura Horizontal)
-    if (!ss.getSheetByName(HOJAS.POLLA_CONFIG)) {
-        const c = ss.insertSheet(HOJAS.POLLA_CONFIG);
-        c.appendRow(['id_sorteo_activo', 'valor_numero', 'fecha_juego', 'descripcion_tema']);
-    }
-
-    return { status: 'success', message: 'Hojas de Polla verificadas' };
-}
+// 💡 setupPolla() y configurarTriggersPolla() → movidas a DbSetup.gs
 
 // ==========================================
 // NUEVAS FUNCIONES GET PARA POLLA V2
@@ -3790,12 +3384,7 @@ function getNumeroDisponiblePolla(sorteo_id, numero) {
   }
 }
 
-/**
- * Configura los triggers automáticos de la Polla (Placeholder Logic)
- */
-function configurarTriggersPolla() {
-  return { status: 'success', message: 'Triggers de Polla configurados' };
-}
+
 
 /**
  * Obtiene el paquete completo para el panel Admin (Sorteo Activo + Números + Historial)
