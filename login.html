@@ -66,6 +66,25 @@
 
     <!-- Script de autenticación -->
     <script src="js/auth.js"></script>
+
+    <!-- Partículas de $ volando -->
+    <script>
+        (function () {
+            const symbols = ['$', '$', '💵', '$', '$'];
+            const count = 18;
+            for (let i = 0; i < count; i++) {
+                const el = document.createElement('span');
+                el.className = 'money-particle';
+                el.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+                el.style.left = (Math.random() * 100) + 'vw';
+                el.style.fontSize = (10 + Math.random() * 13) + 'px';
+                el.style.opacity = (0.3 + Math.random() * 0.5).toFixed(2);
+                el.style.animationDuration = (8 + Math.random() * 14) + 's';
+                el.style.animationDelay = -(Math.random() * 20) + 's';
+                document.body.appendChild(el);
+            }
+        })();
+    </script>
 </body>
 
 </html>

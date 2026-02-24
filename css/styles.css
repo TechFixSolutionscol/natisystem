@@ -953,3 +953,245 @@ body {
         transform: translateY(0);
     }
 }
+
+/* ==========================================
+   18. MEJORAS VISUALES — LOGIN & CONSULTA
+   Psicología del color · Glassmorphism · Microinteracciones
+   ========================================== */
+
+/* ── Fondo animado: gradiente dinámico ── */
+@keyframes gradientShift {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* Partículas flotantes con pseudo-elementos */
+@keyframes floatUp {
+    0% {
+        transform: translateY(0) scale(1);
+        opacity: 0.15;
+    }
+
+    50% {
+        transform: translateY(-40px) scale(1.1);
+        opacity: 0.25;
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.15;
+    }
+}
+
+/* ── Login page: fondo vivo con gradiente animado ── */
+.login-page {
+    background: linear-gradient(135deg, #0f4c81 0%, #1a6b3c 40%, #0f4c81 80%, #1e7e34 100%);
+    background-size: 300% 300%;
+    animation: gradientShift 10s ease infinite;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Burbujas decorativas usando ::before y ::after del body.login-page */
+.login-page::before,
+.login-page::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.12;
+    background: white;
+    animation: floatUp 7s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.login-page::before {
+    width: 260px;
+    height: 260px;
+    top: -60px;
+    left: -80px;
+    animation-duration: 9s;
+}
+
+.login-page::after {
+    width: 180px;
+    height: 180px;
+    bottom: -40px;
+    right: -50px;
+    animation-duration: 11s;
+    animation-delay: 2s;
+}
+
+/* ── Tarjeta login: glassmorphism limpio ── */
+.login-container {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+        0 8px 32px rgba(15, 76, 129, 0.18),
+        0 2px 8px rgba(0, 0, 0, 0.08);
+    animation: slideInCard 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes slideInCard {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ── Título del login: azul de confianza ── */
+.login-header h1 {
+    color: #0f4c81;
+}
+
+/* ── Subtítulo emotivo ── */
+.login-header .subtitle {
+    color: #1a6b3c;
+    font-weight: 500;
+    font-size: 0.95rem;
+    letter-spacing: 0.3px;
+}
+
+/* ── Inputs: focus con brillo verde de crecimiento ── */
+.login-form .form-group input:focus {
+    border-color: #1a6b3c;
+    box-shadow: 0 0 0 4px rgba(26, 107, 60, 0.15);
+    background: #f0fdf4;
+    outline: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+/* ── Botón "Iniciar Sesión": azul profundo + escala en hover ── */
+.login-form .btn-primary {
+    background: linear-gradient(135deg, #0f4c81 0%, #1565c0 100%);
+    border: none;
+    letter-spacing: 0.5px;
+    font-size: 1rem;
+    padding: 14px 24px;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(15, 76, 129, 0.35);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.login-form .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0);
+    transition: background 0.2s ease;
+    border-radius: inherit;
+}
+
+.login-form .btn-primary:hover:not(:disabled) {
+    transform: scale(1.03) translateY(-2px);
+    box-shadow: 0 8px 24px rgba(15, 76, 129, 0.45);
+    background: linear-gradient(135deg, #0d3f6e 0%, #0f4c81 100%);
+}
+
+.login-form .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+    box-shadow: 0 2px 8px rgba(15, 76, 129, 0.3);
+}
+
+/* ── Botón "Consultar Mi Libreta": verde crecimiento + pulso ── */
+@keyframes pulseGreen {
+    0% {
+        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+
+    50% {
+        box-shadow: 0 4px 24px rgba(16, 185, 129, 0.65);
+    }
+
+    100% {
+        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+}
+
+.login-page a.btn-secondary,
+.login-page a[href="consulta.html"] {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    border: none !important;
+    border-radius: 10px;
+    padding: 14px 24px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    animation: pulseGreen 2.8s ease-in-out infinite;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-page a.btn-secondary:hover,
+.login-page a[href="consulta.html"]:hover {
+    transform: scale(1.04) translateY(-2px);
+    animation-play-state: paused;
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.5);
+}
+
+/* ── Footer del login ── */
+.login-footer {
+    border-top: 1px solid rgba(15, 76, 129, 0.12);
+    color: #64748b;
+}
+
+.login-footer a {
+    color: #0f4c81;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s ease;
+}
+
+.login-footer a:hover {
+    color: #1a6b3c;
+    text-decoration: underline;
+}
+
+/* ── Signos de peso flotantes ── */
+.money-particle {
+    position: fixed;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.55);
+    font-weight: 700;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+    animation: moneyFloat linear infinite;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+}
+
+@keyframes moneyFloat {
+    0% {
+        transform: translateY(100vh) rotate(0deg);
+        opacity: 0;
+    }
+
+    8% {
+        opacity: 1;
+    }
+
+    92% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(-120px) rotate(360deg);
+        opacity: 0;
+    }
+}
