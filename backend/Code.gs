@@ -940,36 +940,9 @@ function agregarPrestamo(data) {
         return { status: 'error', message: 'El participante no está activo' };
       }
       
-      // Validar montos y fiador
+      // Validar montos
       const monto = Number(data.monto_prestado);
       const tasa = Number(data.tasa_interes);
-      const ahorroSolicitante = Number(participante.total_aportado || 0);
-
-      // Regla de Fiador: Si monto > ahorro, se requiere fiador
-      if (monto > ahorroSolicitante) {
-          if (!data.fiador_id) {
-              return { status: 'error', message: 'El monto excede sus ahorros. Debe asignar un fiador.' };
-          }
-          if (data.fiador_id === data.participante_id) {
-              return { status: 'error', message: 'El fiador no puede ser el mismo solicitante.' };
-          }
-
-          // Validar capacidad conjunta (Ahorro Solicitante + Ahorro Fiador >= Monto)
-          const fiador = findParticipante(data.fiador_id);
-          if (!fiador || !fiador.activo) {
-              return { status: 'error', message: 'El fiador seleccionado no es válido o está inactivo.' };
-          }
-
-          const ahorroFiador = Number(fiador.total_aportado || 0);
-          const capacidadTotal = ahorroSolicitante + ahorroFiador;
-
-          if (capacidadTotal < monto) {
-               return { 
-                   status: 'error', 
-                   message: `Capacidad insuficiente. Ahorro conjunto (${formatCurrency(capacidadTotal)}) es menor al préstamo.`
-               };
-          }
-      }
       
       if (isNaN(monto) || monto <= 0) {
         return { status: 'error', message: 'El monto debe ser mayor a cero' };
@@ -977,10 +950,61 @@ function agregarPrestamo(data) {
       if (isNaN(tasa) || tasa < 0 || tasa > 100) {
         return { status: 'error', message: 'La tasa debe estar entre 0 y 100' };
       }
-      
-      // Calcular interés simple (Causación Inicial - NO es ganancia aún)
+
+      // Validar fechas: la fecha de vencimiento debe ser posterior a la del préstamo
       const fechaPrestamo = new Date(data.fecha_prestamo);
       const fechaVencimiento = new Date(data.fecha_vencimiento);
+      if (fechaVencimiento <= fechaPrestamo) {
+        return { status: 'error', message: 'La fecha de vencimiento debe ser posterior a la fecha del préstamo' };
+      }
+
+      // ══════════════════════════════════════════════════
+      // MODO DE PRÉSTAMO: ESTRICTO vs FLEXIBLE (Configurable)
+      // ══════════════════════════════════════════════════
+      const sheetConfig = ss.getSheetByName(HOJAS.CONFIG);
+      let modoPrestamo = 'ESTRICTO'; // Default seguro
+      if (sheetConfig) {
+        const dataConfig = sheetConfig.getDataRange().getValues();
+        for (let i = 1; i < dataConfig.length; i++) {
+          if (dataConfig[i][0] === 'MODO_PRESTAMO') {
+            modoPrestamo = String(dataConfig[i][1]).trim().toUpperCase();
+            break;
+          }
+        }
+      }
+
+      // Regla de Fiador: SOLO aplica en modo ESTRICTO
+      if (modoPrestamo === 'ESTRICTO') {
+        const ahorroSolicitante = Number(participante.total_aportado || 0);
+
+        if (monto > ahorroSolicitante) {
+            if (!data.fiador_id) {
+                return { status: 'error', message: 'El monto excede sus ahorros. Debe asignar un fiador.' };
+            }
+            if (data.fiador_id === data.participante_id) {
+                return { status: 'error', message: 'El fiador no puede ser el mismo solicitante.' };
+            }
+
+            // Validar capacidad conjunta (Ahorro Solicitante + Ahorro Fiador >= Monto)
+            const fiador = findParticipante(data.fiador_id);
+            if (!fiador || !fiador.activo) {
+                return { status: 'error', message: 'El fiador seleccionado no es válido o está inactivo.' };
+            }
+
+            const ahorroFiador = Number(fiador.total_aportado || 0);
+            const capacidadTotal = ahorroSolicitante + ahorroFiador;
+
+            if (capacidadTotal < monto) {
+                 return { 
+                     status: 'error', 
+                     message: `Capacidad insuficiente. Ahorro conjunto (${formatCurrency(capacidadTotal)}) es menor al préstamo.`
+                 };
+            }
+        }
+      }
+      // En modo FLEXIBLE: no se valida ahorro ni se exige fiador (pero se guarda si se proporcionó)
+      
+      // Calcular interés simple (Causación Inicial - NO es ganancia aún)
       const diasDiferencia = (fechaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
       const meses = diasDiferencia / 30;
       const interes = monto * (tasa / 100) * meses;
@@ -998,7 +1022,7 @@ function agregarPrestamo(data) {
         saldoPendiente,
         'ACTIVO',
         new Date(), // created_at
-        data.fiador_id || '' // Nuevo campo fiador
+        data.fiador_id || '' // Campo fiador (opcional en modo FLEXIBLE)
       ];
       
       sheet.appendRow(newRow);
@@ -1054,50 +1078,58 @@ function actualizarEstadoPrestamosVencidos() {
 
 /**
  * Modifica la fecha de vencimiento de un préstamo
+ * Protegida con executeWithLock para evitar condiciones de carrera
  * @param {Object} data - {id, nuevaFecha}
  */
 function modificarVencimientoPrestamo(data) {
-  try {
-    const { id, nuevaFecha } = data;
-    if (!id || !nuevaFecha) return { status: 'error', message: 'Faltan datos' };
+  const { id, nuevaFecha } = data;
+  if (!id || !nuevaFecha) return { status: 'error', message: 'Faltan datos' };
 
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
-    const rows = sheet.getDataRange().getValues();
-    
-    let rowIndex = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] === id) {
-        rowIndex = i + 1;
-        break;
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
+      const rows = sheet.getDataRange().getValues();
+      
+      let rowIndex = -1;
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][0] === id) {
+          rowIndex = i + 1;
+          break;
+        }
       }
+
+      if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
+
+      const monto = Number(rows[rowIndex-1][2]);
+      const tasa = Number(rows[rowIndex-1][3]);
+      const fechaPrestamo = new Date(rows[rowIndex-1][4]);
+      const fechaNuevaVencimiento = new Date(nuevaFecha);
+
+      // Validar que la nueva fecha sea posterior a la fecha del préstamo
+      if (fechaNuevaVencimiento <= fechaPrestamo) {
+        return { status: 'error', message: 'La nueva fecha debe ser posterior a la fecha del préstamo' };
+      }
+
+      // Recalcular interés simple
+      const diasDiferencia = (fechaNuevaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
+      const meses = diasDiferencia / 30;
+      const nuevoInteres = monto * (tasa / 100) * meses;
+      const nuevoSaldo = monto + nuevoInteres;
+
+      // Actualizar fecha de vencimiento (Columna 6), interés (Columna 7) y saldo (Columna 8)
+      sheet.getRange(rowIndex, 6).setValue(fechaNuevaVencimiento);
+      sheet.getRange(rowIndex, 7).setValue(nuevoInteres);
+      sheet.getRange(rowIndex, 8).setValue(nuevoSaldo);
+      
+      // Al cambiar la fecha, debemos recalcular el estado inmediatamente
+      actualizarEstadoPrestamosVencidos();
+
+      return { status: 'success', message: 'Fecha de vencimiento actualizada correctamente' };
+    } catch (error) {
+      return { status: 'error', message: error.message };
     }
-
-    if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
-
-    const monto = Number(rows[rowIndex-1][2]);
-    const tasa = Number(rows[rowIndex-1][3]);
-    const fechaPrestamo = new Date(rows[rowIndex-1][4]);
-    const fechaNuevaVencimiento = new Date(nuevaFecha);
-
-    // Recalcular interés simple
-    const diasDiferencia = (fechaNuevaVencimiento - fechaPrestamo) / (1000 * 60 * 60 * 24);
-    const meses = diasDiferencia / 30;
-    const nuevoInteres = monto * (tasa / 100) * meses;
-    const nuevoSaldo = monto + nuevoInteres;
-
-    // Actualizar fecha de vencimiento (Columna 6), interés (Columna 7) y saldo (Columna 8)
-    sheet.getRange(rowIndex, 6).setValue(fechaNuevaVencimiento);
-    sheet.getRange(rowIndex, 7).setValue(nuevoInteres);
-    sheet.getRange(rowIndex, 8).setValue(nuevoSaldo);
-    
-    // Al cambiar la fecha, debemos recalcular el estado inmediatamente
-    actualizarEstadoPrestamosVencidos();
-
-    return { status: 'success', message: 'Fecha de vencimiento actualizada correctamente' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
+  });
 }
 
 /**
@@ -1123,6 +1155,42 @@ function registrarPagoPrestamo(data) {
       }
 
       if (rowIndex === -1) return { status: 'error', message: 'Préstamo no encontrado' };
+
+      // Obtener datos del préstamo para trazabilidad
+      const saldoAnterior = Number(rows[rowIndex-1][7]);
+      const interesGenerado = Number(rows[rowIndex-1][6]);
+
+      // Registrar movimiento de pago total en Movimientos_Prestamos (Trazabilidad)
+      const sheetMovimientos = ss.getSheetByName('Movimientos_Prestamos');
+      if (sheetMovimientos) {
+        // Si hay interés pendiente, registrar pago de interés
+        if (interesGenerado > 0) {
+          sheetMovimientos.appendRow([
+            generateId(),
+            id,
+            new Date(),
+            'PAGO_INTERES',
+            interesGenerado,
+            0, // saldo_resultante_capital
+            0, // saldo_resultante_interes
+            new Date()
+          ]);
+        }
+        // Registrar pago de capital
+        const capitalPagado = saldoAnterior - interesGenerado;
+        if (capitalPagado > 0) {
+          sheetMovimientos.appendRow([
+            generateId(),
+            id,
+            new Date(),
+            'PAGO_TOTAL',
+            capitalPagado,
+            0, // saldo_resultante_capital
+            0, // saldo_resultante_interes
+            new Date()
+          ]);
+        }
+      }
 
       // Actualizar estado a PAGADO (Columna 9 - Índice 8)
       sheet.getRange(rowIndex, 9).setValue('PAGADO');

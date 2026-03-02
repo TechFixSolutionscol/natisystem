@@ -35,6 +35,7 @@
     let allAportes = []; // Para almacenar todos los aportes y aplicar filtros
     let allPrestamos = []; // Para almacenar todos los préstamos y aplicar filtros
     let filtersPrestamoInitialized = false; // Flag para filtros de préstamos
+    let configModoPrestamo = 'ESTRICTO'; // Modo de validación de préstamos (ESTRICTO/FLEXIBLE)
 
     // ==========================================
     // 1. NAVEGACIÓN ENTRE SECCIONES
@@ -1089,6 +1090,14 @@
                     updateMetodoDescription();
                 }
 
+                // Cargar Modo de Préstamo
+                configModoPrestamo = config.MODO_PRESTAMO || 'ESTRICTO';
+                const selectModo = document.getElementById('configModoPrestamo');
+                if (selectModo) {
+                    selectModo.value = configModoPrestamo;
+                    updateModoPrestamoDescription();
+                }
+
                 // Preservar carga de otras configs si existen campos (legacy safety)
                 if (document.getElementById('configAporteMinimo'))
                     document.getElementById('configAporteMinimo').value = config.APORTE_MINIMO || GLOBAL_CONFIG.APORTE_MINIMO;
@@ -1136,6 +1145,36 @@
     }
 
     /**
+     * Actualiza la descripción visual del modo de préstamo seleccionado
+     */
+    function updateModoPrestamoDescription() {
+        const select = document.getElementById('configModoPrestamo');
+        if (!select) return;
+
+        const descDiv = document.getElementById('descModoPrestamo');
+        const modo = select.value;
+
+        // Actualizar variable global
+        configModoPrestamo = modo;
+
+        let icono = '';
+        let texto = '';
+
+        if (modo === 'ESTRICTO') {
+            icono = '<i class="fas fa-shield-alt"></i>';
+            texto = '<strong>Estricto:</strong> Si el monto del préstamo supera el ahorro del participante, se exigirá un fiador cuya capacidad conjunta cubra el monto. Ideal para natilleras con reglas formales.';
+        } else if (modo === 'FLEXIBLE') {
+            icono = '<i class="fas fa-unlock-alt"></i>';
+            texto = '<strong>Flexible:</strong> Se permite prestar cualquier monto sin restricción de ahorros. El fiador es completamente opcional. Ideal para natilleras de confianza.';
+        }
+
+        if (descDiv) {
+            descDiv.innerHTML = `${icono} ${texto}`;
+            descDiv.className = modo === 'FLEXIBLE' ? 'alert alert-warning' : 'alert alert-info';
+        }
+    }
+
+    /**
      * Guarda la configuración de distribución
      */
     async function saveGlobalConfig(e) {
@@ -1148,10 +1187,12 @@
         }
 
         const metodo = document.getElementById('configMetodoDistribucion').value;
+        const modoPrestamo = document.getElementById('configModoPrestamo')?.value || configModoPrestamo;
 
         const configData = {
             action: 'updateConfig',
-            METODO_DISTRIBUCION: metodo
+            METODO_DISTRIBUCION: metodo,
+            MODO_PRESTAMO: modoPrestamo
         };
 
         try {
@@ -1167,7 +1208,7 @@
             const result = await response.json();
 
             if (result.status === 'success') {
-                alert('✅ Método de distribución actualizado a: ' + metodo);
+                alert(`✅ Configuración guardada correctamente.\n\n📊 Distribución: ${metodo}\n💰 Préstamos: ${modoPrestamo}`);
             } else {
                 alert('❌ Error: ' + result.message);
             }
@@ -1194,6 +1235,10 @@
         // Listener para cambio de método (para UX inmediata)
         const selectMetodo = document.getElementById('configMetodoDistribucion');
         if (selectMetodo) selectMetodo.addEventListener('change', updateMetodoDescription);
+
+        // Listener para cambio de modo de préstamo
+        const selectModoPrestamo = document.getElementById('configModoPrestamo');
+        if (selectModoPrestamo) selectModoPrestamo.addEventListener('change', updateModoPrestamoDescription);
 
         // Gestión de Participantes
         const btnAgregarP = document.getElementById('btnAgregarParticipante');
@@ -1253,6 +1298,10 @@
                     nextMonth.setMonth(nextMonth.getMonth() + 1);
                     vencimientoInput.valueAsDate = nextMonth;
                 }
+
+                // Vincular verificación de fiador al cambio de monto
+                const montoInput = document.getElementById('prestamoMonto');
+                if (montoInput) montoInput.addEventListener('change', verificarNecesidadFiador);
             });
         }
 
@@ -1687,7 +1736,8 @@
                 monto_prestado: document.getElementById('prestamoMonto').value,
                 tasa_interes: document.getElementById('prestamoTasa').value,
                 fecha_prestamo: document.getElementById('prestamoFecha').value,
-                fecha_vencimiento: document.getElementById('prestamoVencimiento').value
+                fecha_vencimiento: document.getElementById('prestamoVencimiento').value,
+                fiador_id: document.getElementById('prestamoFiador')?.value || ''
             };
 
             // Validaciones básicas
@@ -2657,12 +2707,6 @@
         tbody.innerHTML = '<tr><td colspan="4" class="text-center">Cargando historial...</td></tr>';
 
         try {
-            const result = await sendDataToBackend({
-                action: 'getMovimientosPrestamo', // GET usually via params but we use unified helper if possible or fetch
-                prestamo_id: prestamoId
-            }, 'GET'); // Helper doesn't exist for GET with params easily in sendDataToBackend usually POST. Let's use fetch directly.
-
-            // Correction: sendDataToBackend is POST. We defined getMovimientosPrestamo in doGet.
             const response = await fetch(`${API_URL}?action=getMovimientosPrestamo&prestamo_id=${prestamoId}`);
             const resultMov = await response.json();
 
@@ -2775,16 +2819,21 @@
         const participanteId = document.getElementById('prestamoParticipante').value;
         const alerta = document.getElementById('alertaFiador');
         const selectFiador = document.getElementById('prestamoFiador');
+        const helpText = document.getElementById('fiadorHelpText');
 
-        if (!participanteId) return;
+        if (!participanteId || !alerta || !selectFiador) return;
 
-        // Obtener info del participante (podríamos optimizar con cache)
-        // Por ahora, asumimos que tenemos la lista de participantes cargada en memoria si la necesitamos, 
-        // pero `loadParticipantesSelect` solo carga el select.
-        // Haremos un fetch rápido o buscaremos si ya tenemos 'allParticipantes' (no definido globalmente aun).
-        // Mejor opción: obtener total_aportado del backend o guardarlo en dataset del option.
+        // En modo FLEXIBLE, nunca exigir fiador
+        if (configModoPrestamo === 'FLEXIBLE') {
+            alerta.style.display = 'none';
+            selectFiador.removeAttribute('required');
+            if (helpText) helpText.textContent = 'Modo flexible: el fiador es completamente opcional.';
+            return;
+        }
 
-        // Estrategia: Fetch único de participantes para tener data completa
+        // Modo ESTRICTO: verificar si el monto excede los ahorros
+        if (helpText) helpText.textContent = 'Solo requerido si el monto excede los ahorros (modo estricto).';
+
         try {
             const response = await fetch(`${API_URL}?action=getParticipantes`);
             const result = await response.json();

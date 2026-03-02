@@ -465,6 +465,29 @@
                                     exactamente 100%.</p>
                             </div>
 
+                            <!-- ═══════════════════════════════════════════ -->
+                            <!-- POLÍTICA DE PRÉSTAMOS (Configurable)       -->
+                            <!-- ═══════════════════════════════════════════ -->
+                            <div class="form-group full-width"
+                                style="margin-top: 30px; border-top: 2px solid #e0e0e0; padding-top: 25px;">
+                                <h4 style="margin-bottom: 15px;"><i class="fas fa-hand-holding-usd"></i> Política de
+                                    Préstamos</h4>
+                                <p class="text-muted" style="margin-bottom: 15px;">Define si los préstamos deben estar
+                                    respaldados por el ahorro del participante o si se permite prestar cualquier monto
+                                    libremente.</p>
+                                <select id="configModoPrestamo" style="padding: 15px; font-size: 1.1rem; width: 100%;">
+                                    <option value="ESTRICTO">🔒 Estricto — No prestar más de lo ahorrado (requiere
+                                        fiador si excede)</option>
+                                    <option value="FLEXIBLE">🔓 Flexible — Prestar cualquier monto sin restricción de
+                                        ahorro</option>
+                                </select>
+                                <div id="descModoPrestamo" class="alert alert-info" style="margin-top: 15px;">
+                                    <i class="fas fa-shield-alt"></i> <strong>Estricto:</strong> Si el monto del
+                                    préstamo supera el ahorro del participante, se exigirá un fiador cuya capacidad
+                                    conjunta cubra el monto. Ideal para natilleras con reglas formales.
+                                </div>
+                            </div>
+
                             <div class="form-group full-width" style="margin-top: 20px;">
                                 <button type="submit" class="btn btn-primary" id="btnGuardarConfigDistribucion"
                                     style="width: 100%; padding: 15px; font-size: 1.1rem;">
@@ -756,6 +779,19 @@
                                 <label for="prestamoVencimiento">Fecha de Vencimiento</label>
                                 <input type="date" id="prestamoVencimiento" required>
                             </div>
+                            <!-- Alerta de Fiador (se muestra/oculta por JS según modo) -->
+                            <div class="form-group full-width" id="alertaFiador"
+                                style="display: none; background: #fff3cd; padding: 12px 15px; border-radius: 8px; border: 1px solid #ffeeba; color: #856404;">
+                                <i class="fas fa-exclamation-circle"></i> El monto supera los ahorros del participante.
+                            </div>
+                            <div class="form-group" id="grupoFiador">
+                                <label for="prestamoFiador">Fiador (opcional)</label>
+                                <select id="prestamoFiador">
+                                    <option value="">Sin fiador</option>
+                                </select>
+                                <small class="text-muted" id="fiadorHelpText">Solo requerido si el monto excede los
+                                    ahorros (modo estricto).</small>
+                            </div>
                             <div class="form-group full-width" style="flex-direction: row; gap: 10px;">
                                 <button type="submit" class="btn btn-primary">Crear Préstamo</button>
                                 <button type="button" class="btn btn-secondary" id="btnCancelarPrestamo"
@@ -795,9 +831,10 @@
                                 <select id="filterPrestamoEstado"
                                     style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
                                     <option value="TODOS">Todos</option>
-                                    <option value="PENDIENTE">Pendientes</option>
+                                    <option value="ACTIVO">Activos</option>
                                     <option value="PAGADO">Pagados</option>
                                     <option value="VENCIDO">Vencidos</option>
+                                    <option value="MORA">En Mora</option>
                                 </select>
                             </div>
 

@@ -125,6 +125,7 @@ function inicializarBaseDatos() {
           sheet.appendRow(['MORA_DIARIA',           '3000',     'Valor de la mora por cada día de retraso']);
           sheet.appendRow(['DIAS_PAGO',             '15,30',    'Días hábiles para pago sin mora (separados por coma)']);
           sheet.appendRow(['METODO_DISTRIBUCION',   'EQUITATIVA','Método de distribución de ganancias: EQUITATIVA, PROPORCIONAL o MANUAL']);
+          sheet.appendRow(['MODO_PRESTAMO',         'ESTRICTO',  'Modo de validación de préstamos: ESTRICTO (requiere fiador si monto > ahorro) o FLEXIBLE (sin restricción)']);
           mensajes.push(`   → Valores iniciales de Config insertados`);
         }
 
@@ -249,6 +250,13 @@ function actualizarEsquemaDistribucion() {
     if (!existeMetodo) {
       sheetConfig.appendRow(['METODO_DISTRIBUCION', 'EQUITATIVA', 'Método de distribución: EQUITATIVA, PROPORCIONAL o MANUAL']);
       Logger.log('✅ Config METODO_DISTRIBUCION agregada');
+    }
+
+    // Migración: MODO_PRESTAMO (ESTRICTO / FLEXIBLE)
+    const existeModoPrestamo = data.some(row => row[0] === 'MODO_PRESTAMO');
+    if (!existeModoPrestamo) {
+      sheetConfig.appendRow(['MODO_PRESTAMO', 'ESTRICTO', 'Modo de validación de préstamos: ESTRICTO (requiere fiador si monto > ahorro) o FLEXIBLE (sin restricción)']);
+      Logger.log('✅ Config MODO_PRESTAMO agregada');
     }
   }
 
