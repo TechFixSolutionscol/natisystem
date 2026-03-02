@@ -116,6 +116,19 @@ function doGet(e) {
         result = getMovimientosPrestamo(e.parameter.prestamo_id);
         break;
 
+      case 'simularAmortizacion':
+        result = generarTablaAmortizacion(
+          Number(e.parameter.monto),
+          Number(e.parameter.tasa),
+          Number(e.parameter.cuotas),
+          e.parameter.metodo || 'FRANCES'
+        );
+        break;
+
+      case 'getAmortizacionPrestamo':
+        result = getAmortizacionPrestamo(e.parameter.prestamo_id);
+        break;
+
       case 'getMoras':
         result = obtenerMorasPendientes();
         break;
@@ -309,6 +322,10 @@ function doPost(e) {
 
       case 'configurarTriggersPolla':
         result = configurarTriggersPolla();
+        break;
+
+      case 'enviarRecordatorios':
+        result = enviarRecordatoriosPrestamos();
         break;
         
       default:
@@ -963,14 +980,25 @@ function agregarPrestamo(data) {
       // ══════════════════════════════════════════════════
       const sheetConfig = ss.getSheetByName(HOJAS.CONFIG);
       let modoPrestamo = 'ESTRICTO'; // Default seguro
+      let montoMaximo = 0; // 0 = sin límite
       if (sheetConfig) {
         const dataConfig = sheetConfig.getDataRange().getValues();
         for (let i = 1; i < dataConfig.length; i++) {
           if (dataConfig[i][0] === 'MODO_PRESTAMO') {
             modoPrestamo = String(dataConfig[i][1]).trim().toUpperCase();
-            break;
+          }
+          if (dataConfig[i][0] === 'MONTO_MAXIMO_PRESTAMO') {
+            montoMaximo = Number(dataConfig[i][1]) || 0;
           }
         }
+      }
+
+      // Validar tope máximo de préstamo (si está configurado > 0)
+      if (montoMaximo > 0 && monto > montoMaximo) {
+        return { 
+          status: 'error', 
+          message: `El monto ($${monto.toLocaleString()}) excede el límite máximo permitido ($${montoMaximo.toLocaleString()})` 
+        };
       }
 
       // Regla de Fiador: SOLO aplica en modo ESTRICTO
@@ -1557,6 +1585,264 @@ function getMovimientosPrestamo(prestamoId) {
     filtrados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
     return { status: 'success', data: filtrados };
+}
+
+/**
+ * Genera una tabla de amortización para un préstamo
+ * Soporta sistema FRANCES (cuota fija) y ALEMAN (cuota decreciente)
+ * @param {number} monto - Capital del préstamo
+ * @param {number} tasaMensual - Tasa de interés mensual (%)
+ * @param {number} numeroCuotas - Número de cuotas mensuales
+ * @param {string} metodo - 'FRANCES' o 'ALEMAN'
+ * @returns {Object} Tabla de amortización con totales
+ */
+function generarTablaAmortizacion(monto, tasaMensual, numeroCuotas, metodo) {
+  try {
+    if (!monto || monto <= 0 || !tasaMensual || !numeroCuotas || numeroCuotas <= 0) {
+      return { status: 'error', message: 'Parámetros inválidos: monto, tasa y cuotas son requeridos y deben ser mayores a 0' };
+    }
+
+    const tasa = tasaMensual / 100; // Convertir porcentaje a decimal
+    const tabla = [];
+    let saldo = monto;
+    let totalInteres = 0;
+    let totalCapital = 0;
+    let totalCuota = 0;
+
+    if (metodo === 'FRANCES') {
+      // ══════════════════════════════════════════
+      // SISTEMA FRANCÉS: Cuota fija mensual
+      // Fórmula: C = M × [i(1+i)^n] / [(1+i)^n - 1]
+      // ══════════════════════════════════════════
+      const cuotaFija = tasa === 0 
+        ? monto / numeroCuotas 
+        : monto * (tasa * Math.pow(1 + tasa, numeroCuotas)) / (Math.pow(1 + tasa, numeroCuotas) - 1);
+
+      for (let i = 1; i <= numeroCuotas; i++) {
+        const interesCuota = saldo * tasa;
+        const capitalCuota = cuotaFija - interesCuota;
+        saldo = Math.max(0, saldo - capitalCuota);
+
+        // Corregir última cuota para evitar decimales residuales
+        if (i === numeroCuotas) saldo = 0;
+
+        totalInteres += interesCuota;
+        totalCapital += capitalCuota;
+        totalCuota += cuotaFija;
+
+        tabla.push({
+          cuota: i,
+          cuota_valor: Math.round(cuotaFija),
+          capital: Math.round(capitalCuota),
+          interes: Math.round(interesCuota),
+          saldo: Math.round(saldo)
+        });
+      }
+    } else {
+      // ══════════════════════════════════════════
+      // SISTEMA ALEMÁN: Capital fijo, cuota decreciente
+      // Capital por cuota = Monto / N
+      // ══════════════════════════════════════════
+      const capitalFijo = monto / numeroCuotas;
+
+      for (let i = 1; i <= numeroCuotas; i++) {
+        const interesCuota = saldo * tasa;
+        const cuotaValor = capitalFijo + interesCuota;
+        saldo = Math.max(0, saldo - capitalFijo);
+
+        if (i === numeroCuotas) saldo = 0;
+
+        totalInteres += interesCuota;
+        totalCapital += capitalFijo;
+        totalCuota += cuotaValor;
+
+        tabla.push({
+          cuota: i,
+          cuota_valor: Math.round(cuotaValor),
+          capital: Math.round(capitalFijo),
+          interes: Math.round(interesCuota),
+          saldo: Math.round(saldo)
+        });
+      }
+    }
+
+    return {
+      status: 'success',
+      data: {
+        metodo: metodo,
+        monto: monto,
+        tasa_mensual: tasaMensual,
+        num_cuotas: numeroCuotas,
+        cuota_mensual: metodo === 'FRANCES' ? Math.round(tabla[0].cuota_valor) : 'Variable',
+        total_interes: Math.round(totalInteres),
+        total_a_pagar: Math.round(totalCuota),
+        tabla: tabla
+      }
+    };
+  } catch (error) {
+    return { status: 'error', message: `Error generando amortización: ${error.message}` };
+  }
+}
+
+/**
+ * Obtiene la tabla de amortización para un préstamo existente
+ * Calcula las cuotas basándose en los datos del préstamo
+ * @param {string} prestamoId - ID del préstamo
+ * @returns {Object} Tabla de amortización
+ */
+function getAmortizacionPrestamo(prestamoId) {
+  try {
+    if (!prestamoId) return { status: 'error', message: 'ID de préstamo requerido' };
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(HOJAS.PRESTAMOS);
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+
+    let prestamo = null;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0] === prestamoId) {
+        prestamo = {};
+        headers.forEach((h, idx) => prestamo[h] = rows[i][idx]);
+        break;
+      }
+    }
+
+    if (!prestamo) return { status: 'error', message: 'Préstamo no encontrado' };
+
+    const monto = Number(prestamo.monto_prestado);
+    const tasa = Number(prestamo.tasa_interes);
+    const fechaPrestamo = new Date(prestamo.fecha_prestamo);
+    const fechaVencimiento = new Date(prestamo.fecha_vencimiento);
+    
+    // Calcular número de meses entre las fechas
+    const diffMs = fechaVencimiento - fechaPrestamo;
+    const diffDias = diffMs / (1000 * 60 * 60 * 24);
+    const numeroCuotas = Math.max(1, Math.round(diffDias / 30));
+
+    return generarTablaAmortizacion(monto, tasa, numeroCuotas, 'FRANCES');
+  } catch (error) {
+    return { status: 'error', message: `Error: ${error.message}` };
+  }
+}
+
+/**
+ * SISTEMA DE RECORDATORIOS AUTOMATICOS DE PRESTAMOS
+ * Escanea prestamos activos/vencidos y envia alertas por email
+ * EJECUTAR via trigger semanal o manualmente desde el frontend
+ */
+function enviarRecordatoriosPrestamos() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    // 1. Leer configuracion de dias de aviso
+    const sheetConfig = ss.getSheetByName(HOJAS.CONFIG);
+    let diasAviso = [7, 3, 1];
+    if (sheetConfig) {
+      const dataConfig = sheetConfig.getDataRange().getValues();
+      for (let i = 1; i < dataConfig.length; i++) {
+        if (dataConfig[i][0] === 'DIAS_AVISO_PRESTAMO') {
+          diasAviso = String(dataConfig[i][1]).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d));
+          break;
+        }
+      }
+    }
+
+    // 2. Obtener prestamos activos/vencidos
+    const sheetPrestamos = ss.getSheetByName(HOJAS.PRESTAMOS);
+    if (!sheetPrestamos) return { status: 'error', message: 'Hoja Prestamos no encontrada' };
+    
+    const rows = sheetPrestamos.getDataRange().getValues();
+    const headers = rows[0];
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const recordatorios = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const estadoIdx = headers.indexOf('estado');
+      const estado = String(rows[i][estadoIdx] || '').toUpperCase();
+      if (estado !== 'ACTIVO' && estado !== 'VENCIDO') continue;
+
+      const vencIdx = headers.indexOf('fecha_vencimiento');
+      const fechaVencimiento = new Date(rows[i][vencIdx]);
+      fechaVencimiento.setHours(0, 0, 0, 0);
+      const diasRestantes = Math.round((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
+      
+      const debeNotificar = diasAviso.includes(diasRestantes) || diasRestantes < 0;
+      if (!debeNotificar) continue;
+
+      const participanteId = rows[i][headers.indexOf('participante_id')];
+      const participante = findParticipante(participanteId);
+      
+      if (participante) {
+        recordatorios.push({
+          prestamo_id: rows[i][0],
+          participante: participante.nombre,
+          telefono: participante.telefono || '',
+          monto: Number(rows[i][headers.indexOf('monto_prestado')]),
+          saldo: Number(rows[i][headers.indexOf('saldo_pendiente')]),
+          fecha_vencimiento: fechaVencimiento,
+          dias_restantes: diasRestantes,
+          urgencia: diasRestantes <= 0 ? 'VENCIDO' : diasRestantes <= 3 ? 'URGENTE' : 'PROXIMO'
+        });
+      }
+    }
+
+    if (recordatorios.length === 0) {
+      return { status: 'success', message: 'No hay recordatorios pendientes', data: { total: 0, recordatorios: [] }};
+    }
+
+    // 3. Construir email resumen
+    var htmlEmail = '<h2>Recordatorios de Prestamos - NatiSystem</h2>';
+    htmlEmail += '<p>Se encontraron <strong>' + recordatorios.length + '</strong> prestamos que requieren atencion:</p>';
+    htmlEmail += '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;">';
+    htmlEmail += '<tr style="background:#1e3a5f;color:white;"><th>Estado</th><th>Participante</th><th>Saldo</th><th>Vence</th><th>Dias</th><th>WhatsApp</th></tr>';
+
+    for (var j = 0; j < recordatorios.length; j++) {
+      var r = recordatorios[j];
+      var fechaStr = Utilities.formatDate(r.fecha_vencimiento, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      var whatsappMsg = encodeURIComponent('Hola ' + r.participante + ', le recordamos que su prestamo por $' + r.saldo.toLocaleString() + ' vence el ' + fechaStr + '. Gracias.');
+      var whatsappLink = r.telefono ? 'https://wa.me/57' + r.telefono.replace(/\\D/g, '') + '?text=' + whatsappMsg : '';
+      var rowColor = r.dias_restantes <= 0 ? '#ffebee' : r.dias_restantes <= 3 ? '#fff8e1' : '#e8f5e9';
+      htmlEmail += '<tr style="background:' + rowColor + ';">';
+      htmlEmail += '<td>' + r.urgencia + '</td>';
+      htmlEmail += '<td><strong>' + r.participante + '</strong></td>';
+      htmlEmail += '<td>$' + r.saldo.toLocaleString() + '</td>';
+      htmlEmail += '<td>' + fechaStr + '</td>';
+      htmlEmail += '<td>' + (r.dias_restantes <= 0 ? 'VENCIDO (' + Math.abs(r.dias_restantes) + 'd)' : r.dias_restantes + ' dias') + '</td>';
+      htmlEmail += '<td>' + (r.telefono ? '<a href="' + whatsappLink + '">Enviar</a>' : 'Sin tel.') + '</td>';
+      htmlEmail += '</tr>';
+    }
+    htmlEmail += '</table>';
+
+    // 4. Enviar email a admins
+    var enviados = 0;
+    var sheetUsuarios = ss.getSheetByName(HOJAS.USUARIOS);
+    if (sheetUsuarios) {
+      var usuarios = sheetUsuarios.getDataRange().getValues();
+      var headersU = usuarios[0];
+      var rolIdx = headersU.indexOf('rol');
+      var emailIdx = headersU.indexOf('email');
+      for (var k = 1; k < usuarios.length; k++) {
+        if (String(usuarios[k][rolIdx]).toLowerCase() === 'admin' && usuarios[k][emailIdx]) {
+          MailApp.sendEmail({
+            to: usuarios[k][emailIdx],
+            subject: 'NatiSystem: ' + recordatorios.length + ' prestamo(s) requieren atencion',
+            htmlBody: htmlEmail
+          });
+          enviados++;
+        }
+      }
+    }
+
+    return { 
+      status: 'success', 
+      message: recordatorios.length + ' recordatorio(s) procesados. Email enviado a ' + enviados + ' admin(s).',
+      data: { total: recordatorios.length, recordatorios: recordatorios }
+    };
+  } catch (error) {
+    return { status: 'error', message: 'Error en recordatorios: ' + error.message };
+  }
 }
 
 /**

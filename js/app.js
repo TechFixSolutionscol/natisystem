@@ -1098,6 +1098,14 @@
                     updateModoPrestamoDescription();
                 }
 
+                // Cargar Monto Máximo
+                const inputMontoMax = document.getElementById('configMontoMaximo');
+                if (inputMontoMax) inputMontoMax.value = config.MONTO_MAXIMO_PRESTAMO || '0';
+
+                // Cargar Días de Aviso
+                const inputDiasAviso = document.getElementById('configDiasAviso');
+                if (inputDiasAviso) inputDiasAviso.value = config.DIAS_AVISO_PRESTAMO || '7,3,1';
+
                 // Preservar carga de otras configs si existen campos (legacy safety)
                 if (document.getElementById('configAporteMinimo'))
                     document.getElementById('configAporteMinimo').value = config.APORTE_MINIMO || GLOBAL_CONFIG.APORTE_MINIMO;
@@ -1192,7 +1200,9 @@
         const configData = {
             action: 'updateConfig',
             METODO_DISTRIBUCION: metodo,
-            MODO_PRESTAMO: modoPrestamo
+            MODO_PRESTAMO: modoPrestamo,
+            MONTO_MAXIMO_PRESTAMO: document.getElementById('configMontoMaximo')?.value || '0',
+            DIAS_AVISO_PRESTAMO: document.getElementById('configDiasAviso')?.value || '7,3,1'
         };
 
         try {
@@ -1218,7 +1228,7 @@
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = '💾 Guardar Método de Distribución';
+                btn.textContent = '💾 Guardar Configuración';
             }
         }
     }
@@ -1286,6 +1296,9 @@
         if (btnCrearPrestamo && prestamoFormCard) {
             btnCrearPrestamo.addEventListener('click', () => {
                 prestamoFormCard.style.display = 'block';
+                // Mostrar simulador de amortización junto con el formulario
+                const simCard = document.getElementById('simuladorAmortizacion');
+                if (simCard) simCard.style.display = 'block';
                 prestamoFormCard.scrollIntoView({ behavior: 'smooth' });
 
                 // Set default dates
@@ -1308,6 +1321,10 @@
         if (btnCancelarPrestamo && prestamoFormCard) {
             btnCancelarPrestamo.addEventListener('click', () => {
                 prestamoFormCard.style.display = 'none';
+                const simCard = document.getElementById('simuladorAmortizacion');
+                if (simCard) { simCard.style.display = 'none'; }
+                const simResult = document.getElementById('simuladorResultado');
+                if (simResult) simResult.style.display = 'none';
                 if (prestamoForm) prestamoForm.reset();
             });
         }
@@ -2720,6 +2737,9 @@
             tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error de conexión</td></tr>';
         }
 
+        // Cargar tabla de amortización del préstamo
+        cargarAmortizacionPrestamo(prestamoId);
+
         // Mostrar Modal
         const modal = new bootstrap.Modal(document.getElementById('modalDetallePrestamo'));
         modal.show();
@@ -2735,11 +2755,124 @@
         tbody.innerHTML = movimientos.map(m => `
             <tr>
                 <td>${formatDate(m.fecha)}</td>
-                <td><span class="badge ${m.tipo === 'PAGO_INTERES' ? 'bg-warning text-dark' : 'bg-success'}">${m.tipo}</span></td>
+                <td><span class="badge ${m.tipo === 'PAGO_INTERES' ? 'bg-warning text-dark' : m.tipo === 'PAGO_TOTAL' ? 'bg-primary' : 'bg-success'}">${m.tipo}</span></td>
                 <td>${formatCurrency(m.monto)}</td>
-                <td><small>${m.tipo === 'PAGO_INTERES' ? 'Interés' : 'Capital'}</small></td>
+                <td><small>${m.tipo === 'PAGO_INTERES' ? 'Interés' : m.tipo === 'PAGO_TOTAL' ? 'Pago Total' : 'Capital'}</small></td>
             </tr>
         `).join('');
+    }
+
+    // ==========================================
+    // SIMULADOR Y TABLA DE AMORTIZACIÓN
+    // ==========================================
+
+    /**
+     * Simula la tabla de amortización con los datos del formulario
+     */
+    window.simularAmortizacion = async function () {
+        const monto = parseFloat(document.getElementById('prestamoMonto').value) || 0;
+        const tasa = parseFloat(document.getElementById('prestamoTasa').value) || 0;
+        const cuotas = parseInt(document.getElementById('simuladorCuotas').value) || 12;
+        const metodo = document.getElementById('simuladorMetodo').value;
+
+        if (!monto || !tasa) {
+            alert('Ingrese el Monto y la Tasa de Interés en el formulario antes de simular.');
+            return;
+        }
+
+        const btn = document.getElementById('btnSimular');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Calculando...'; }
+
+        try {
+            const url = `${API_URL}?action=simularAmortizacion&monto=${monto}&tasa=${tasa}&cuotas=${cuotas}&metodo=${metodo}`;
+            const response = await fetch(url);
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                const data = result.data;
+
+                // Mostrar KPIs
+                document.getElementById('simCuotaMensual').textContent = typeof data.cuota_mensual === 'number' ? formatCurrency(data.cuota_mensual) : data.cuota_mensual;
+                document.getElementById('simTotalInteres').textContent = formatCurrency(data.total_interes);
+                document.getElementById('simTotalPagar').textContent = formatCurrency(data.total_a_pagar);
+
+                // Renderizar tabla
+                const tbody = document.getElementById('simuladorTablaBody');
+                tbody.innerHTML = data.tabla.map(row => `
+                    <tr>
+                        <td>${row.cuota}</td>
+                        <td><strong>${formatCurrency(row.cuota_valor)}</strong></td>
+                        <td>${formatCurrency(row.capital)}</td>
+                        <td style="color: #d97706;">${formatCurrency(row.interes)}</td>
+                        <td>${formatCurrency(row.saldo)}</td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('simuladorResultado').style.display = 'block';
+            } else {
+                alert('❌ ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error en simulación:', error);
+            alert('❌ Error de conexión al simular');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '🔮 Simular'; }
+        }
+    };
+
+    /**
+     * Toggle para la sección de amortización en el modal de detalle
+     */
+    window.toggleAmortizacion = function () {
+        const body = document.getElementById('bodyAmortizacion');
+        const icon = document.getElementById('iconAmortizacion');
+        if (body.style.display === 'none') {
+            body.style.display = 'block';
+            if (icon) icon.className = 'fas fa-chevron-up';
+        } else {
+            body.style.display = 'none';
+            if (icon) icon.className = 'fas fa-chevron-down';
+        }
+    };
+
+    /**
+     * Carga la tabla de amortización para un préstamo existente
+     */
+    async function cargarAmortizacionPrestamo(prestamoId) {
+        const loading = document.getElementById('amortizacionLoading');
+        const container = document.getElementById('amortizacionTablaContainer');
+        const tbody = document.getElementById('amortizacionTablaBody');
+
+        if (loading) loading.style.display = 'block';
+        if (container) container.style.display = 'none';
+        // Colapsar por defecto
+        const body = document.getElementById('bodyAmortizacion');
+        if (body) body.style.display = 'none';
+
+        try {
+            const response = await fetch(`${API_URL}?action=getAmortizacionPrestamo&prestamo_id=${prestamoId}`);
+            const result = await response.json();
+
+            if (result.status === 'success' && result.data && result.data.tabla) {
+                tbody.innerHTML = result.data.tabla.map(row => `
+                    <tr>
+                        <td>${row.cuota}</td>
+                        <td><strong>${formatCurrency(row.cuota_valor)}</strong></td>
+                        <td>${formatCurrency(row.capital)}</td>
+                        <td style="color: #d97706;">${formatCurrency(row.interes)}</td>
+                        <td>${formatCurrency(row.saldo)}</td>
+                    </tr>
+                `).join('');
+
+                if (loading) loading.style.display = 'none';
+                if (container) container.style.display = 'block';
+            } else {
+                if (loading) loading.textContent = 'No se pudo generar la tabla de amortización.';
+            }
+        } catch (error) {
+            console.error('Error cargando amortización:', error);
+            if (loading) loading.textContent = 'Error al cargar amortización.';
+        }
     }
 
     /**
@@ -2786,6 +2919,28 @@
     /**
      * Cierra manualmente el préstamo
      */
+    /**
+     * Enviar recordatorios de prestamos manualmente
+     */
+    window.enviarRecordatoriosManual = async function () {
+        const btn = document.getElementById('btnEnviarRecordatorios');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando recordatorios...'; }
+
+        try {
+            const result = await sendDataToBackend({ action: 'enviarRecordatorios' });
+            if (result.status === 'success') {
+                alert('✅ ' + result.message);
+            } else {
+                alert('❌ ' + result.message);
+            }
+        } catch (error) {
+            console.error(error);
+            alert('❌ Error de conexión');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '📬 Enviar Recordatorios Ahora (Manual)'; }
+        }
+    };
+
     window.cerrarPrestamoUI = async function () {
         const prestamoId = document.getElementById('detallePrestamoId').value;
         if (!confirm('¿Estás seguro de CERRAR este préstamo? Esta acción es irreversible.')) return;

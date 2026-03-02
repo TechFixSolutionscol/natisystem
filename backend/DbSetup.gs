@@ -126,6 +126,8 @@ function inicializarBaseDatos() {
           sheet.appendRow(['DIAS_PAGO',             '15,30',    'Días hábiles para pago sin mora (separados por coma)']);
           sheet.appendRow(['METODO_DISTRIBUCION',   'EQUITATIVA','Método de distribución de ganancias: EQUITATIVA, PROPORCIONAL o MANUAL']);
           sheet.appendRow(['MODO_PRESTAMO',         'ESTRICTO',  'Modo de validación de préstamos: ESTRICTO (requiere fiador si monto > ahorro) o FLEXIBLE (sin restricción)']);
+          sheet.appendRow(['MONTO_MAXIMO_PRESTAMO', '0',         'Monto máximo por préstamo (0 = sin límite)']);
+          sheet.appendRow(['DIAS_AVISO_PRESTAMO',   '7,3,1',    'Días antes del vencimiento para enviar recordatorio (separados por coma)']);
           mensajes.push(`   → Valores iniciales de Config insertados`);
         }
 
@@ -257,6 +259,20 @@ function actualizarEsquemaDistribucion() {
     if (!existeModoPrestamo) {
       sheetConfig.appendRow(['MODO_PRESTAMO', 'ESTRICTO', 'Modo de validación de préstamos: ESTRICTO (requiere fiador si monto > ahorro) o FLEXIBLE (sin restricción)']);
       Logger.log('✅ Config MODO_PRESTAMO agregada');
+    }
+
+    // Migración: MONTO_MAXIMO_PRESTAMO
+    const existeMontoMax = data.some(row => row[0] === 'MONTO_MAXIMO_PRESTAMO');
+    if (!existeMontoMax) {
+      sheetConfig.appendRow(['MONTO_MAXIMO_PRESTAMO', '0', 'Monto máximo por préstamo (0 = sin límite)']);
+      Logger.log('✅ Config MONTO_MAXIMO_PRESTAMO agregada');
+    }
+
+    // Migración: DIAS_AVISO_PRESTAMO (para recordatorios)
+    const existeDiasAviso = data.some(row => row[0] === 'DIAS_AVISO_PRESTAMO');
+    if (!existeDiasAviso) {
+      sheetConfig.appendRow(['DIAS_AVISO_PRESTAMO', '7,3,1', 'Días antes del vencimiento para enviar recordatorio (separados por coma)']);
+      Logger.log('✅ Config DIAS_AVISO_PRESTAMO agregada');
     }
   }
 

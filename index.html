@@ -488,10 +488,38 @@
                                 </div>
                             </div>
 
+                            <!-- Tope Máximo de Préstamo -->
+                            <div class="form-group full-width" style="margin-top: 20px;">
+                                <label for="configMontoMaximo" style="font-weight: 600;">
+                                    <i class="fas fa-money-bill-wave"></i> Monto Máximo por Préstamo
+                                </label>
+                                <input type="number" id="configMontoMaximo" min="0" value="0" placeholder="0"
+                                    style="padding: 12px; font-size: 1rem; width: 100%; border: 2px solid #e0e0e0; border-radius: 8px;">
+                                <small class="text-muted">Ingrese 0 para no aplicar límite. Si es mayor a 0, ningún
+                                    préstamo podrá exceder este monto.</small>
+                            </div>
+
+                            <!-- Días de Aviso para Recordatorios -->
+                            <div class="form-group full-width"
+                                style="margin-top: 20px; border-top: 2px solid #e0e0e0; padding-top: 20px;">
+                                <h4 style="margin-bottom: 15px;"><i class="fas fa-bell"></i> Recordatorios Automáticos
+                                </h4>
+                                <label for="configDiasAviso">Días antes del vencimiento para enviar alerta</label>
+                                <input type="text" id="configDiasAviso" value="7,3,1" placeholder="7,3,1"
+                                    style="padding: 12px; font-size: 1rem; width: 100%; border: 2px solid #e0e0e0; border-radius: 8px;">
+                                <small class="text-muted">Separe los días con comas. Ej: 7,3,1 = alertas a 7, 3 y 1 día
+                                    antes del vencimiento.</small>
+                                <button type="button" class="btn btn-warning" id="btnEnviarRecordatorios"
+                                    onclick="enviarRecordatoriosManual()"
+                                    style="margin-top: 10px; width: 100%; padding: 12px;">
+                                    📬 Enviar Recordatorios Ahora (Manual)
+                                </button>
+                            </div>
+
                             <div class="form-group full-width" style="margin-top: 20px;">
                                 <button type="submit" class="btn btn-primary" id="btnGuardarConfigDistribucion"
                                     style="width: 100%; padding: 15px; font-size: 1.1rem;">
-                                    💾 Guardar Método de Distribución
+                                    💾 Guardar Configuración
                                 </button>
                             </div>
 
@@ -800,6 +828,76 @@
                         </form>
                     </div>
                 </div>
+
+                <!-- Simulador de Amortización -->
+                <div class="card" id="simuladorAmortizacion" style="display: none; border-left: 4px solid #8b5cf6;">
+                    <div class="card-header"
+                        style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">
+                        <h2 style="margin: 0; font-size: 1.1rem;">📊 Simulador de Cuotas</h2>
+                    </div>
+                    <div class="card-body">
+                        <div
+                            style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; align-items: end;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9rem;">Método de Amortización</label>
+                                <select id="simuladorMetodo"
+                                    style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; width: 100%;">
+                                    <option value="FRANCES">📊 Francés (Cuota Fija)</option>
+                                    <option value="ALEMAN">📉 Alemán (Cuota Decreciente)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9rem;">Número de Cuotas</label>
+                                <input type="number" id="simuladorCuotas" min="1" max="60" value="12" placeholder="12"
+                                    style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; width: 100%;">
+                            </div>
+                            <div class="form-group" style="margin: 0; padding-bottom: 2px;">
+                                <button type="button" class="btn btn-primary" id="btnSimular"
+                                    onclick="simularAmortizacion()"
+                                    style="padding: 10px 25px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border: none; width: 100%;">
+                                    🔮 Simular
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Resultados del simulador -->
+                        <div id="simuladorResultado" style="display: none; margin-top: 20px;">
+                            <div
+                                style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                                <div
+                                    style="background: #f0fdf4; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #bbf7d0;">
+                                    <small style="color: #166534;">Cuota Mensual</small>
+                                    <h4 id="simCuotaMensual" style="margin: 5px 0 0; color: #15803d;">$0</h4>
+                                </div>
+                                <div
+                                    style="background: #fefce8; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #fef08a;">
+                                    <small style="color: #854d0e;">Total Intereses</small>
+                                    <h4 id="simTotalInteres" style="margin: 5px 0 0; color: #a16207;">$0</h4>
+                                </div>
+                                <div
+                                    style="background: #eff6ff; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #bfdbfe;">
+                                    <small style="color: #1e40af;">Total a Pagar</small>
+                                    <h4 id="simTotalPagar" style="margin: 5px 0 0; color: #1d4ed8;">$0</h4>
+                                </div>
+                            </div>
+                            <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                                <table class="table" style="font-size: 0.9rem;">
+                                    <thead style="position: sticky; top: 0; background: #f8f9fa;">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Cuota</th>
+                                            <th>Capital</th>
+                                            <th>Interés</th>
+                                            <th>Saldo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="simuladorTablaBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Barra de Filtros para Préstamos -->
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"
@@ -1227,6 +1325,36 @@
                                 capital.</small>
                         </div>
                     </div>
+
+                    <!-- Tabla de Amortización del Préstamo -->
+                    <div class="card mb-3 border-info" id="seccionAmortizacion">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center"
+                            style="cursor: pointer;" onclick="toggleAmortizacion()">
+                            <span>📊 Plan de Cuotas (Amortización)</span>
+                            <i class="fas fa-chevron-down" id="iconAmortizacion"></i>
+                        </div>
+                        <div class="card-body" id="bodyAmortizacion" style="display: none;">
+                            <div id="amortizacionLoading" class="text-center text-muted">
+                                Cargando tabla de amortización...
+                            </div>
+                            <div class="table-responsive" style="max-height: 250px; overflow-y: auto;"
+                                id="amortizacionTablaContainer" style="display: none;">
+                                <table class="table table-sm table-striped">
+                                    <thead style="position: sticky; top: 0; background: #e0f2fe;">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Cuota</th>
+                                            <th>Capital</th>
+                                            <th>Interés</th>
+                                            <th>Saldo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="amortizacionTablaBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
                     <h6>Historial de Movimientos</h6>
                     <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
                         <table class="table table-sm table-striped">
