@@ -28,7 +28,11 @@ const HOJAS = {
   POLLA_NUMEROS: "Polla_Numeros",
   POLLA_SORTEOS: "Polla_Sorteos",
   POLLA_CONFIG: "Polla_Config",
-  CONFIG: "Config"
+  CONFIG: "Config",
+  BINGO_JUEGOS: "Bingo_Juegos",
+  BINGO_TABLAS: "Bingo_Tablas",
+  BINGO_BALOTAS: "Bingo_Balotas",
+  BINGO_CHAT: "Bingo_Chat"
 };
 
 // ==========================================
@@ -143,6 +147,22 @@ function doGet(e) {
 
       case 'getNumeroDisponiblePolla':
         result = getNumeroDisponiblePolla(e.parameter.sorteo_id, e.parameter.numero);
+        break;
+
+      case 'getBingoState':
+        result = getBingoState(e.parameter.juego_id);
+        break;
+
+      case 'getBingoMessages':
+        result = getBingoMessages(e.parameter.juego_id);
+        break;
+
+      case 'getMisTablas':
+        result = getMisTablas(e.parameter.participante_id);
+        break;
+
+      case 'getTablasBingo':
+        result = getTablasBingo(e.parameter.juego_id);
         break;
         
       default:
@@ -326,6 +346,46 @@ function doPost(e) {
 
       case 'enviarRecordatorios':
         result = enviarRecordatoriosPrestamos();
+        break;
+
+      // Bingo Control
+      case 'crearJuegoBingo':
+        result = crearJuegoBingo(data);
+        break;
+
+      case 'comprarTablaBingo':
+        result = comprarTablaBingo(data);
+        break;
+
+      case 'cantarBalotaBingo':
+        result = cantarBalotaBingo(data);
+        break;
+
+      case 'reclamarBingo':
+        result = reclamarBingo(data);
+        break;
+
+      case 'procesarPremioBingo':
+        result = procesarPremioBingo(data);
+        break;
+
+      case 'aprobarPagoBingo':
+        result = aprobarPagoBingo(data);
+        break;
+
+      case 'sendBingoMessage':
+        result = sendBingoMessage(data);
+        break;
+
+      case 'setBingoVoiceRoom':
+        result = setBingoVoiceRoom(data);
+        break;
+
+      case 'getLiveKitToken':
+        result = { 
+          status: 'error', 
+          message: 'LiveKit ya no es soportado. Use WebSockets.'
+        };
         break;
         
       default:
@@ -545,6 +605,7 @@ function login(data) {
         status: 'success', 
         message: 'Autenticación exitosa',
         user: { 
+          id: user.id,
           email: user.email, 
           nombre: user.nombre, 
           rol: user.rol 
@@ -2914,6 +2975,7 @@ function getConsultaSocio(cedula, mes) {
       status: 'success',
       data: {
         socio: {
+          id: socio.id,
           nombre: socio.nombre,
           cedula: socio.cedula,
           // No enviamos teléfono ni email por privacidad
@@ -3825,3 +3887,524 @@ function getPollaData(sorteo_id = null, options = {}) {
   }
 }
 
+
+
+// ========================================== 
+// MÓDULO BINGO MULTIJUGADOR 
+// ========================================== 
+
+function crearJuegoBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      if (!sheet) return { status: "error", message: "La hoja de Bingo_Juegos no existe. Ejecuta 'testInicializar' en DbSetup.gs" };
+      const newId = generateId();
+      const newRow = [
+        newId,
+        new Date(data.fecha),
+        Number(data.valor_tabla),
+        0, // total_bolsa
+        "ABIERTO",
+        "", // ganador_id
+        new Date(), // created_at
+        "", // voice_room
+        data.modo_juego || "FULL"
+      ];
+      sheet.appendRow(newRow);
+      return { status: "success", message: "Juego de Bingo creado", id: newId };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+function comprarTablaBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_TABLAS);
+      if (!sheet) return { status: "error", message: "La hoja de Bingo_Tablas no existe. Ejecuta 'testInicializar' en DbSetup.gs" };
+
+      // 1. Manejo opcional de comprobante en Drive
+      let fileUrl = data.comprobante_url || ""; // Por defecto si ya viene una URL o está vacío
+      
+      if (data.fileData && data.fileName && data.mimeType) {
+        try {
+          const participantes = getData(HOJAS.PARTICIPANTES);
+          const pId = String(data.participante_id || "");
+          const socio = pId ? participantes.data.find(p => String(p.id) === pId) : null;
+          const nombreSocio = socio ? socio.nombre : "Socio-Desconocido";
+          
+          const folderId = FOLDER_ID_COMPROBANTES === "TU_ID_DE_CARPETA_DRIVE_AQUI" ? null : FOLDER_ID_COMPROBANTES;
+          fileUrl = saveFileToDrive(data.fileData, data.fileName, data.mimeType, folderId, nombreSocio);
+        } catch (driveErr) {
+          return { status: "error", message: "Error al guardar el recibo en Drive: " + driveErr.message };
+        }
+      } else if (!fileUrl) {
+          return { status: "error", message: "Debe adjuntar un archivo o comprobante válido." };
+      }
+
+      const numeros = generarMatrizBingo();
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.juego_id,
+        data.participante_id,
+        JSON.stringify(numeros),
+        "ACTIVA",
+        fileUrl,
+        "PENDIENTE"
+      ];
+      sheet.appendRow(newRow);
+      return { status: "success", message: "Tabla comprada. Pendiente de aprobación.", id: newId };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+function generarMatrizBingo() {
+  const matriz = [];
+  const rangos = [[1, 15], [16, 30], [31, 45], [46, 60], [61, 75]];
+  for (let col = 0; col < 5; col++) {
+    const [min, max] = rangos[col];
+    const nums = [];
+    while (nums.length < 5) {
+      const n = Math.floor(Math.random() * (max - min + 1)) + min;
+      if (!nums.includes(n)) nums.push(n);
+    }
+    matriz[col] = nums;
+  }
+  // El centro es libre
+  matriz[2][2] = "FREE";
+  return matriz;
+}
+
+function cantarBalotaBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_BALOTAS);
+      if (!sheet) return { status: "error", message: "La hoja de Bingo_Balotas no existe. Ejecuta 'testInicializar' en DbSetup.gs" };
+      
+      // Obtener balotas ya cantadas en este juego
+      const balotasData = getData(HOJAS.BINGO_BALOTAS);
+      const cantadas = balotasData.data
+        .filter(b => b.juego_id === data.juego_id)
+        .map(b => Number(b.numero));
+      
+      if (cantadas.length >= 75) {
+        return { status: "error", message: "Ya se cantaron todas las balotas (1-75)" };
+      }
+
+      // Generar número único
+      let numero;
+      do {
+        numero = Math.floor(Math.random() * 75) + 1;
+      } while (cantadas.includes(numero));
+
+      const newId = generateId();
+      const newRow = [
+        newId,
+        data.juego_id,
+        numero,
+        new Date()
+      ];
+      sheet.appendRow(newRow);
+      
+      // Limpiar cache para forzar actualización
+      CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
+      
+      return { status: "success", message: "Balota cantada: " + numero, numero: numero };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+function getBingoState(juegoId) {
+  try {
+    const cache = CacheService.getScriptCache();
+    
+    // Si es LATEST, encontrar el ID real primero
+    if (juegoId === 'LATEST') {
+      const juegos = getData(HOJAS.BINGO_JUEGOS);
+      if (juegos.status !== "success" || juegos.data.length === 0) {
+        return { status: "error", message: "No hay juegos activos" };
+      }
+      // El último juego es el más reciente
+      const ultimoJuego = juegos.data[juegos.data.length - 1];
+      juegoId = ultimoJuego.id;
+    }
+
+    const cached = cache.get("bingo_state_" + juegoId);
+    if (cached) return JSON.parse(cached);
+
+    const balotas = getData(HOJAS.BINGO_BALOTAS);
+    if (balotas.status !== "success") return balotas;
+
+    const juegosFull = getData(HOJAS.BINGO_JUEGOS);
+    const juegoInfo = juegosFull.data.find(j => j.id === juegoId);
+
+    const state = {
+      status: "success",
+      juego_id: juegoId,
+      valor_tabla: juegoInfo ? juegoInfo.valor_tabla : 0,
+      total_bolsa: juegoInfo ? juegoInfo.total_bolsa : 0,
+      estado: juegoInfo ? juegoInfo.estado : "DESCONOCIDO",
+      modo_juego: juegoInfo ? juegoInfo.modo_juego : "FULL",
+      balotas: balotas.data.filter(b => String(b.juego_id) === String(juegoId)).map(b => b.numero),
+      voice_room: juegoInfo ? juegoInfo.voice_room : null,
+      ganador_id: juegoInfo ? juegoInfo.ganador_id : null,
+      timestamp: new Date().getTime()
+    };
+
+    // Si hay ganador, intentar buscar su nombre
+    if (state.ganador_id) {
+       const participantes = getData(HOJAS.PARTICIPANTES);
+       if (participantes.status === 'success') {
+          const p = participantes.data.find(part => String(part.id) === String(state.ganador_id));
+          state.ganador_nombre = p ? p.nombre : "Socio " + state.ganador_id;
+       }
+    }
+
+    cache.put("bingo_state_" + juegoId, JSON.stringify(state), 3); 
+    return state;
+  } catch (e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function getTablasBingo(juegoId) {
+  try {
+    const tablas = getData(HOJAS.BINGO_TABLAS);
+    if (tablas.status !== "success") return tablas;
+
+    const participantes = getData(HOJAS.PARTICIPANTES);
+    // Comparación robusta - Si no hay juegoId, no devolvemos nada para evitar fugas de datos
+    if (!juegoId || juegoId === 'null') return { status: "success", data: [] };
+    
+    const filterTablas = tablas.data.filter(t => String(t.juego_id) === String(juegoId));
+
+    // Cruzar con nombres de participantes
+    const result = filterTablas.map(t => {
+      const p = participantes.status === "success" ? 
+                participantes.data.find(part => String(part.id) === String(t.participante_id)) : null;
+      return {
+        ...t,
+        participante_nombre: p ? p.nombre : "Socio #" + t.participante_id
+      };
+    });
+
+    return { status: "success", data: result };
+  } catch (e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function aprobarPagoBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheetTablas = ss.getSheetByName(HOJAS.BINGO_TABLAS);
+      const rowsTablas = sheetTablas.getDataRange().getValues();
+      const headersTablas = rowsTablas[0];
+      
+      const idIdx = headersTablas.indexOf("id");
+      const juegoIdIdx = headersTablas.indexOf("juego_id");
+      const estadoPagoIdx = headersTablas.indexOf("estado_pago");
+
+      let juegoId = null;
+      let tablaEncontrada = false;
+
+      for (let i = 1; i < rowsTablas.length; i++) {
+        if (String(rowsTablas[i][idIdx]) === String(data.tabla_id)) {
+          // Si ya está aprobado, no hacemos nada más (para evitar duplicar la bolsa)
+          if (rowsTablas[i][estadoPagoIdx] === "APROBADO") {
+            return { status: "success", message: "El pago ya estaba aprobado" };
+          }
+          
+          sheetTablas.getRange(i + 1, estadoPagoIdx + 1).setValue("APROBADO");
+          juegoId = rowsTablas[i][juegoIdIdx];
+          tablaEncontrada = true;
+          break;
+        }
+      }
+
+      if (!tablaEncontrada) {
+        return { status: "error", message: "Tabla no encontrada" };
+      }
+
+      // 2. Actualizar la bolsa en la hoja de Juegos
+      const sheetJuegos = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      const rowsJuegos = sheetJuegos.getDataRange().getValues();
+      const headersJuegos = rowsJuegos[0];
+      
+      const jIdIdx = headersJuegos.indexOf("id");
+      const valorTablaIdx = headersJuegos.indexOf("valor_tabla");
+      const totalBolsaIdx = headersJuegos.indexOf("total_bolsa");
+
+      for (let j = 1; j < rowsJuegos.length; j++) {
+        if (String(rowsJuegos[j][jIdIdx]) === String(juegoId)) {
+          const valorTabla = Number(rowsJuegos[j][valorTablaIdx] || 0);
+          const bolsaActual = Number(rowsJuegos[j][totalBolsaIdx] || 0);
+          const nuevaBolsa = bolsaActual + valorTabla;
+          
+          sheetJuegos.getRange(j + 1, totalBolsaIdx + 1).setValue(nuevaBolsa);
+          
+          // Limpiar cache del estado para que los jugadores vean la nueva bolsa
+          CacheService.getScriptCache().remove("bingo_state_" + juegoId);
+          
+          return { status: "success", message: "Pago aprobado y bolsa actualizada", nueva_bolsa: nuevaBolsa };
+        }
+      }
+
+      return { status: "success", message: "Pago aprobado (no se pudo actualizar la bolsa: juego no encontrado)" };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+/**
+ * Un jugador reclama que tiene Bingo
+ */
+function reclamarBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_TABLAS);
+      const rows = sheet.getDataRange().getValues();
+      const headers = rows[0];
+      
+      const juegoIdx = headers.indexOf("juego_id");
+      const partIdx = headers.indexOf("participante_id");
+      const estadoIdx = headers.indexOf("estado");
+      const numerosIdx = headers.indexOf("numeros_json");
+
+      let tableRow = -1;
+      let numerosTabla = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][juegoIdx]) === String(data.juego_id) && 
+            String(rows[i][partIdx]) === String(data.participante_id)) {
+          tableRow = i;
+          numerosTabla = JSON.parse(rows[i][numerosIdx]);
+          break;
+        }
+      }
+
+      if (tableRow === -1) {
+        return { status: "error", message: "No se encontró una tabla válida para reclamar en este juego." };
+      }
+
+      // 2. Obtener balotas cantadas
+      const sheetBalotas = ss.getSheetByName(HOJAS.BINGO_BALOTAS);
+      const rowsB = sheetBalotas.getDataRange().getValues();
+      const balotasCantadas = rowsB.filter(r => String(r[1]) === String(data.juego_id)).map(r => Number(r[2]));
+
+      // 3. Obtener modo de juego
+      const sheetJuegos = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      const rowsJ = sheetJuegos.getDataRange().getValues();
+      const juegoInfo = rowsJ.find(r => String(r[0]) === String(data.juego_id));
+      const modoJuego = juegoInfo ? juegoInfo[rowsJ[0].indexOf("modo_juego")] : "FULL";
+
+      // 4. VERIFICACIÓN MATEMÁTICA
+      let aciertos = 0;
+      let totalNumeros = 0;
+      
+      // La matriz es de 5x5. numerosTabla[col][row]
+      for (let col = 0; col < 5; col++) {
+        for (let row = 0; row < 5; row++) {
+          const val = numerosTabla[col][row];
+          if (val === 'FREE') continue;
+          
+          totalNumeros++;
+          if (balotasCantadas.indexOf(Number(val)) !== -1) {
+            aciertos++;
+          }
+        }
+      }
+
+      let verificado = false;
+      if (modoJuego === 'FULL') {
+        verificado = (aciertos >= 24); // 24 números + FREE
+      } else {
+        // ANY: El sistema lo marca como verificado si tiene al menos 4 aciertos (mínimo para gritar)
+        // El administrador tendrá la última palabra, pero el bot avisa si es matemáticamente posible.
+        verificado = (aciertos >= 4);
+      }
+
+      if (!verificado) {
+        return { status: "error", message: `Validación fallida: Solo tienes ${aciertos} aciertos de ${totalNumeros} requeridos.` };
+      }
+
+      // 5. Proceder con el reclamo
+      sheet.getRange(tableRow + 1, estadoIdx + 1).setValue('RECLAMANDO');
+      
+      sendBingoMessage({
+        juego_id: data.juego_id,
+        usuario_id: data.participante_id,
+        usuario_nombre: "SISTEMA",
+        mensaje: `✅ Bingo VALIDADO matemáticamente (${aciertos} aciertos). Verificación final por Admin pendiente.`,
+        rol: 'admin'
+      });
+
+      return { status: "success", message: "¡Bingo reclamado y VALIDADO por el sistema! El administrador dará la aprobación final.", aciertos: aciertos };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+/**
+ * El administrador confirma el ganador y finaliza el juego
+ */
+function procesarPremioBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheetJuegos = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      const sheetTablas = ss.getSheetByName(HOJAS.BINGO_TABLAS);
+      
+      const juegos = sheetJuegos.getDataRange().getValues();
+      const jHeaders = juegos[0];
+      const jIdIdx = jHeaders.indexOf("id");
+      const jEstIdx = jHeaders.indexOf("estado");
+      const jGanIdx = jHeaders.indexOf("ganador_id");
+
+      for (let i = 1; i < juegos.length; i++) {
+        if (String(juegos[i][jIdIdx]) === String(data.juego_id)) {
+          sheetJuegos.getRange(i + 1, jEstIdx + 1).setValue('FINALIZADO');
+          sheetJuegos.getRange(i + 1, jGanIdx + 1).setValue(data.participante_id);
+          break;
+        }
+      }
+
+      const tablas = sheetTablas.getDataRange().getValues();
+      const tHeaders = tablas[0];
+      const tIdIdx = tHeaders.indexOf("id");
+      const tEstIdx = tHeaders.indexOf("estado");
+
+      for (let i = 1; i < tablas.length; i++) {
+        if (String(tablas[i][tIdIdx]) === String(data.tabla_id)) {
+          sheetTablas.getRange(i + 1, tEstIdx + 1).setValue('GANADORA');
+          break;
+        }
+      }
+
+      sendBingoMessage({
+        juego_id: data.juego_id,
+        usuario_id: 'ADMIN',
+        usuario_nombre: 'ADMINISTRADOR',
+        mensaje: `🏆 ¡Tenemos un ganador! Felicitaciones. El juego ha finalizado.`,
+        rol: 'admin'
+      });
+
+      CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
+
+      return { status: "success", message: "Juego finalizado y ganador registrado." };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+/**
+ * Envía un mensaje al chat del Bingo
+ */
+function sendBingoMessage(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_CHAT);
+      
+      const id = generateId();
+      const timestamp = new Date().toISOString();
+      
+      sheet.appendRow([
+        id,
+        data.juego_id,
+        data.usuario_id,
+        data.usuario_nombre,
+        data.mensaje,
+        data.rol || 'socio',
+        timestamp
+      ]);
+      
+      return { status: "success", message: "Mensaje enviado" };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+/**
+ * Obtiene los mensajes de un juego de Bingo
+ */
+function getBingoMessages(juegoId) {
+  try {
+    const mensajes = getData(HOJAS.BINGO_CHAT);
+    if (mensajes.status !== "success") return mensajes;
+    
+    // Filtrar por juego y ordenar por tiempo (últimos 50 para no saturar)
+    const result = mensajes.data
+      .filter(m => String(m.juego_id) === String(juegoId))
+      .slice(-50);
+      
+    return { status: "success", data: result };
+  } catch (e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+/**
+ * Función de utilidad para obtener la etiqueta de una balota (B-1, I-16, etc.)
+ */
+function getBingoBallLabel(numero) {
+  const n = Number(numero);
+  if (n >= 1 && n <= 15) return "B-" + n;
+  if (n >= 16 && n <= 30) return "I-" + n;
+  if (n >= 31 && n <= 45) return "N-" + n;
+  if (n >= 46 && n <= 60) return "G-" + n;
+  if (n >= 61 && n <= 75) return "O-" + n;
+  return n.toString();
+}
+
+/**
+ * Actualiza la sala de voz de un juego de Bingo
+ */
+function setBingoVoiceRoom(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      const rows = sheet.getDataRange().getValues();
+      const headers = rows[0];
+      
+      const idIdx = headers.indexOf("id");
+      const roomIdx = headers.indexOf("voice_room");
+
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][idIdx]) === String(data.juego_id)) {
+          sheet.getRange(i + 1, roomIdx + 1).setValue(data.voice_room || "");
+          CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
+          return { status: "success", message: "Sala de voz actualizada" };
+        }
+      }
+      return { status: "error", message: "Juego no encontrado" };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+/**
+ * Genera un token JWT para LiveKit manualmente en Apps Script
+ */
+/**
+ * Token generation removed (LiveKit deprecated)
+ */
+function generateLiveKitToken(room, identity, canPublish) {
+    return null;
+}

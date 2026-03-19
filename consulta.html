@@ -655,6 +655,11 @@
                         style="margin-left: 10px; background: #f59e0b; border: none; color: white;">
                         🎱 Jugar La Polla
                     </button>
+                    <!-- BOTÓN BINGO 3D -->
+                    <button onclick="window.location.href='bingo.html'" class="btn btn-sm"
+                        style="margin-left: 10px; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); border: none; color: white; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4); font-weight: bold;">
+                        🎰 Ir al Bingo
+                    </button>
                 </div>
 
             </div>
@@ -841,6 +846,11 @@
                 if (result.status === 'success') {
                     currentCedula = cedula;
                     currentData = result.data;
+                    
+                    // Guardar sesión para Bingo
+                    sessionStorage.setItem('natillera_id', result.data.socio.id);
+                    sessionStorage.setItem('natillera_name', result.data.socio.nombre);
+                    
                     renderData(result.data);
                     document.getElementById('resultArea').style.display = 'block';
                     document.getElementById('searchArea').querySelector('form').style.display = 'none'; // Ocultar form

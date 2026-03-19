@@ -1,0 +1,12 @@
+{
+  "name": "bingo-socket-server",
+  "version": "1.0.0",
+  "description": "Servidor de WebSockets para relay de eventos de Bingo",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

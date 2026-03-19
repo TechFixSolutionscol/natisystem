@@ -22,6 +22,7 @@
      * @param {Object} user - Objeto del usuario
      */
     function setCurrentUser(user) {
+        sessionStorage.setItem('natillera_id', user.id);
         sessionStorage.setItem('natillera_user', user.email);
         sessionStorage.setItem('natillera_role', user.rol);
         sessionStorage.setItem('natillera_name', user.nombre);
@@ -31,6 +32,7 @@
      * Cierra la sesión del usuario
      */
     function logout() {
+        sessionStorage.removeItem('natillera_id');
         sessionStorage.removeItem('natillera_user');
         sessionStorage.removeItem('natillera_role');
         sessionStorage.removeItem('natillera_name');

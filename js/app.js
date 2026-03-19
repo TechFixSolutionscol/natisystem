@@ -52,10 +52,12 @@
         // Control de acceso al menú ajustes y usuarios
         const navUsuarios = document.getElementById('navUsuarios');
         const navConfig = document.getElementById('navConfig');
+        const navBingo = document.getElementById('navBingo');
         const isAdmin = userRole === 'admin' || userRole === 'ADMIN';
 
         if (navUsuarios) navUsuarios.style.display = isAdmin ? 'flex' : 'none';
         if (navConfig) navConfig.style.display = isAdmin ? 'flex' : 'none';
+        if (navBingo) navBingo.style.display = isAdmin ? 'flex' : 'none';
 
         navLinks.forEach(link => {
             link.addEventListener('click', function (e) {
@@ -117,6 +119,9 @@
                 break;
             case 'config':
                 loadGlobalConfig();
+                break;
+            case 'bingo-admin':
+                if (window.loadBingoAdminData) window.loadBingoAdminData();
                 break;
         }
     }

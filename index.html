@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -43,6 +43,11 @@
                 <a href="#polla" class="nav-link" data-section="polla">
                     <span class="icon">🎟️</span>
                     <span class="text">La Polla Loca</span>
+                </a>
+                <a href="#bingo-admin" class="nav-link admin-only" data-section="bingo-admin" id="navBingo"
+                    style="display: none;">
+                    <span class="icon">🎰</span>
+                    <span class="text">Gestión Bingo</span>
                 </a>
                 <a href="#config" class="nav-link admin-only" data-section="config" id="navConfig"
                     style="display: none;">
@@ -1055,6 +1060,155 @@
                     </div>
                 </div>
             </section>
+            <!-- Sección: Administración Bingo -->
+            <section id="bingo-admin" class="content-section">
+                <header class="section-header">
+                    <h1>Administración de Bingo</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-danger" id="btnToggleVoice" title="Activar Micrófono">🎤 Voz: OFF</button>
+                        <button class="btn btn-success" id="btnCrearJuegoBingoModal">+ Nuevo Juego</button>
+                        <button class="btn btn-info" id="btnOpenNewRound" style="display: none;">🔄 Abrir Nueva Ronda</button>
+                    </div>
+                </header>
+
+                <div class="card mb-4" id="bingoGameSetupCard" style="display: none;">
+                    <div class="card-header">
+                        <h2>Configurar Nuevo Juego</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="bingoGameForm" class="form-grid">
+                            <div class="form-group">
+                                <label for="bingoFecha">Fecha del Bingo</label>
+                                <input type="datetime-local" id="bingoFecha" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bingoValorTabla">Valor de la Tabla</label>
+                                <input type="number" id="bingoValorTabla" min="0" step="1000" value="20000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bingoModoJuego">Modo de Ganador</label>
+                                <select id="bingoModoJuego" required>
+                                    <option value="FULL">Tabla Llena (Tradicional)</option>
+                                    <option value="ANY">Manual/Configurado (Admin decide)</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="submit" class="btn btn-primary">Iniciar Juego</button>
+                                <button type="button" class="btn btn-secondary" onclick="document.getElementById('bingoGameSetupCard').style.display='none'">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="stats-grid mb-4">
+                    <div class="stat-card stat-info">
+                        <div class="stat-icon">🎱</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Juego Actual <span id="adminBingoStatus" class="badge bg-primary">INICIANDO</span></h3>
+                            <p class="stat-value" id="adminBingoId">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-success">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-content">
+                            <h3 class="stat-label">Bolsa Acumulada</h3>
+                            <p class="stat-value" id="adminBingoBolsa">$0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header bg-warning text-dark">
+                        <h2>🔔 Aprobación de Recibos Bingo</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Participante</th>
+                                        <th>Recibo</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bingoApprovalTableBody">
+                                    <tr><td colspan="4" class="text-center">No hay recibos pendientes</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Validación de Ganadores Bingo -->
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h2>🏆 Validar Ganadores de Bingo</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Socio</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bingoWinnerTableBody">
+                                    <tr><td colspan="2" class="text-center">No hay reclamos de Bingo pendientes</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Administrador Bingo -->
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h2>💬 Chat del Bingo</h2>
+                    </div>
+                    <div class="card-body" style="height: 350px; display: flex; flex-direction: column;">
+                        <div id="adminChatMessages" style="flex: 1; overflow-y: auto; padding: 10px; background: #f1f5f9; border-radius: 8px; font-size: 0.9rem;"></div>
+                        <div class="input-group mt-3" style="display: flex; gap: 5px;">
+                            <input type="text" id="adminChatInput" class="form-control" placeholder="Escribe a todos los socios..." style="flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #cbd5e1;">
+                            <button class="btn btn-primary" id="btnAdminSendChat" style="padding: 10px 20px;">Enviar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Control de Voz P2P (Admin) -->
+                <div id="adminVoiceControl" class="card mb-4" style="display: none; border: 2px solid #10b981;">
+                    <div class="card-header bg-success text-white">
+                        <h2>🎙️ Transmisión de Voz P2P Activa</h2>
+                    </div>
+                    <div class="card-body py-3 text-center">
+                        <p>Los socios están conectados directamente a tu micrófono.</p>
+                        <div class="d-flex justify-content-center align-items-center gap-2 mb-2">
+                            <div id="micLevel" style="width: 150px; height: 10px; background: #eee; border-radius: 5px; overflow: hidden;">
+                                <div id="micLevelInner" style="width: 0%; height: 100%; background: #10b981; transition: width 0.1s;"></div>
+                            </div>
+                            <span id="peerStatus" class="badge bg-light text-dark">Iniciando...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h2>🕹️ Control del Sorteo</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <div class="display-balota-admin" id="adminLastBall" style="font-size: 3rem; font-weight: 900; background: #f8f9fa; color: #333; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 4px solid #3b82f6; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">?</div>
+                            <button class="btn btn-primary btn-lg" id="btnCantarBalota" style="padding: 20px 40px; font-size: 1.5rem;">🎲 Cantar Balota</button>
+                        </div>
+                        <div id="adminBallHistory" class="d-flex flex-wrap gap-2">
+                            <!-- Historial de balotas -->
+                        </div>
+                    </div>
+                </div>
+                </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -1422,8 +1576,10 @@
         </div>
     </div>
 
+    <!-- Scripts -->
     <script src="js/app.js"></script>
     <script src="js/polla_admin.js"></script>
+    <script src="js/bingo_admin.js"></script>
     <script>
         // Inicializar filtros de participantes cuando la página esté lista
         window.addEventListener('load', function () {

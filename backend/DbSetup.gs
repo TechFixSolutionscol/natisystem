@@ -105,6 +105,18 @@ function inicializarBaseDatos() {
       ],
       'Config': [
         'clave', 'valor', 'descripcion'
+      ],
+      'Bingo_Juegos': [
+        'id', 'fecha', 'valor_tabla', 'total_bolsa', 'estado', 'ganador_id', 'created_at', 'voice_room', 'modo_juego'
+      ],
+      'Bingo_Tablas': [
+        'id', 'juego_id', 'participante_id', 'numeros_json', 'estado', 'comprobante_url', 'estado_pago'
+      ],
+      'Bingo_Balotas': [
+        'id', 'juego_id', 'numero', 'fecha_canto'
+      ],
+      'Bingo_Chat': [
+        'id', 'juego_id', 'usuario_id', 'usuario_nombre', 'mensaje', 'rol', 'timestamp'
       ]
     };
 
@@ -585,4 +597,22 @@ function testPermissions() {
 
   Logger.log('✅ ¡ÉXITO! Permisos de ESCRITURA otorgados correctamente.');
   return '¡ÉXITO! Permisos de ESCRITURA Otorgados Correctamente.';
+}
+
+/**
+ * Ayuda al usuario a configurar los secretos de LiveKit
+ * Ejecuta esta función desde el editor de Apps Script para guardar las claves de forma segura.
+ */
+function configurarLiveKit() {
+  const props = PropertiesService.getScriptProperties();
+  
+  // 🔑 Usando las claves reales de LiveKit proporcionadas por el usuario
+  const API_KEY = "APInnqZdKpkYX7F"; 
+  const API_SECRET = "MZwl1U426Cf19GBrpyUwBh3B8VMDdPONuSeITT4B4S2"; 
+  
+  props.setProperty('LIVEKIT_API_KEY', API_KEY);
+  props.setProperty('LIVEKIT_API_SECRET', API_SECRET);
+  
+  Logger.log("✅ Configuración de LiveKit guardada en Propiedades del Script.");
+  return "Claves guardadas. ¡Ya puedes probar la voz!";
 }
