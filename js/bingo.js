@@ -1,6 +1,6 @@
 // BINGO 3D - CLIENT LOGIC
 window.API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
-window.WS_URL = 'wss://tu-servidor-node.onrender.com'; // Placeholder
+window.WS_URL = 'wss://natisystem.onrender.com';
 let currentGameId = null;
 let myTable = null;
 let calledBalls = [];
@@ -140,6 +140,7 @@ async function syncState() {
         
         // 5. Última Balota con Animación si cambió
         if (newBalls.length > calledBalls.length) {
+            const latest = newBalls[newBalls.length - 1]; // <--- FIX: Definir latest
             const latestLabel = getBingoLabel(latest);
             const currentBallEl = document.getElementById('currentBall');
             if (currentBallEl) {
@@ -432,8 +433,9 @@ function mostrarBotonNuevaRonda() {
 function announceBall(ballCode) {
     if (!('speechSynthesis' in window)) return;
     
-    // El formato es "B-12", "I-25", etc.
-    const text = `Balota: ${ballCode.split('-').join(' ')}`; 
+    // Asegurar que sea string para evitar errores de .split o .join
+    const ballStr = String(ballCode);
+    const text = `Balota: ${ballStr.split('').join(' ')}`; 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'es-ES';
     utterance.rate = 1.0;

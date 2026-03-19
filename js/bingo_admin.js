@@ -10,7 +10,7 @@
     'use strict';
 
     const API_URL = window.API_URL;
-    const WS_URL = window.WS_URL || "wss://tu-servidor-node.render.com";
+    const WS_URL = window.WS_URL || "wss://natisystem.onrender.com";
 
     let adminUpdateInterval = null;
     let currentAdminGameId = null;
