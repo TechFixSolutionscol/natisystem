@@ -70,24 +70,10 @@
                 btnBalota.addEventListener('click', handleCantarBallWithFeedback); // Feedback táctil
             }
 
-            // Botón Micrófono
-            const btnVoice = document.getElementById('btnToggleVoice');
-            if (btnVoice) {
-                console.log("Botón de voz encontrado.");
-                btnVoice.addEventListener('click', toggleAdminVoice);
-            } else {
-                console.error("ERROR: No se encontró el botón btnToggleVoice en el DOM.");
-            }
+            // Botón Micrófono - ELIMINADO
 
-            // Chat Admin
-            const btnSendChat = document.getElementById('btnAdminSendChat');
-            if (btnSendChat) {
-                btnSendChat.addEventListener('click', sendAdminChatMessage);
-            }
-            const inputChat = document.getElementById('adminChatInput');
-            if (inputChat) {
-                inputChat.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAdminChatMessage(); });
-            }
+            // Chat Admin - El envío se maneja ahora desde el globo flotante
+            // (Los botones y campos antiguos ya no existen en el HTML)
 
             // Botón Nueva Ronda
             const btnNewRound = document.getElementById('btnOpenNewRound');
@@ -124,9 +110,20 @@
                 document.getElementById('adminBingoBolsa').innerText = formatCurrency(res.total_bolsa || 0);
                 
                 const statusBadge = document.getElementById('adminBingoStatus');
+                const btnCancelar = document.getElementById('btnCancelarJuego');
+
                 if (statusBadge) {
                     statusBadge.innerText = res.estado;
-                    statusBadge.className = `badge ${res.estado === 'FINALIZADO' ? 'bg-success' : 'bg-primary'}`;
+                    statusBadge.className = `badge ${res.estado === 'FINALIZADO' ? 'bg-success' : (res.estado === 'CANCELADO' ? 'bg-danger' : 'bg-primary')}`;
+                }
+
+                // Mostrar botón cancelar solo si el juego está en curso y NO está finalizado/cancelado
+                if (btnCancelar) {
+                    if (res.estado === 'ACTIVO' || res.estado === 'INICIANDO' || res.estado === 'RECLAMANDO') {
+                        btnCancelar.style.display = 'inline-block';
+                    } else {
+                        btnCancelar.style.display = 'none';
+                    }
                 }
                 
                 // Actualizar Balotas
@@ -163,9 +160,11 @@
             const res = await response.json();
             if (res.status !== 'success') return;
 
-            // Nota: El backend Code.gs necesita una acción para listar TODAS las tablas de un juego
-            // Vamos a usar una acción que implementaremos si no existe: 'getTablasPendientesBingo'
-            const respTablas = await fetch(`${API_URL}?action=getTablasBingo&juego_id=${res.juego_id}`);
+            // Aseguramos que usamos el ID del juego actual (res.juego_id) o el global
+            const juegoIdBusqueda = currentAdminGameId || res.juego_id;
+            if (!juegoIdBusqueda) return;
+
+            const respTablas = await fetch(`${API_URL}?action=getTablasBingo&juego_id=${juegoIdBusqueda}`);
             const dataTablas = await respTablas.json();
 
             const tbody = document.getElementById('bingoApprovalTableBody');
@@ -291,30 +290,77 @@
     };
 
     window.confirmarGanador = async function(juegoId, partId, tablaId) {
-        if (!confirm("¿Confirmar este ganador? El juego se cerrará oficialmente.")) return;
+        const modal = document.getElementById('modalConfirmarGanador');
+        const spanMonto = document.getElementById('confirmarPremioMonto');
+        const btnEfectivo = document.getElementById('btnPremioEfectivo');
+        const btnAhorro = document.getElementById('btnPremioAhorro');
+
+        // Mostrar premio actual
+        const bolsaText = document.getElementById('adminBingoBolsa').innerText;
+        spanMonto.innerText = bolsaText;
+        modal.style.display = 'block';
+
+        return new Promise((resolve) => {
+            const process = async (metodo) => {
+                modal.style.display = 'none';
+                try {
+                    const resp = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'procesarPremioBingo',
+                            juego_id: juegoId,
+                            participante_id: partId,
+                            tabla_id: tablaId,
+                            metodo_pago: metodo
+                        })
+                    });
+                    const res = await resp.json();
+                    if (res.status === 'success') {
+                        sendSocketEvent('game-finished', { winner: partId });
+                        alert(`¡Juego finalizado! Ganador: ${partId}. Pago: ${metodo}`);
+                        loadPendingBingoReceipts();
+                        refreshBingoState();
+                    } else {
+                        alert("Error: " + res.message);
+                    }
+                } catch (e) {
+                    alert("Error de conexión");
+                }
+                resolve();
+            };
+
+            btnEfectivo.onclick = () => process('EFECTIVO');
+            btnAhorro.onclick = () => process('AHORRO');
+        });
+    };
+
+    window.cancelarJuegoActual = async function() {
+        if (!currentAdminGameId) return;
+
+        // Verificar si hay gente (aquí podríamos usar el socket.roomSize si lo tuviéramos)
+        // Por ahora, confirmación simple con advertencia
+        if (!confirm("⚠️ ¿Estás SEGURO de cancelar este juego? \n\nEsto lo marcará como CANCELADO y se cerrará para todos. Úsalo solo si cometiste un error en la configuración.")) return;
 
         try {
             const resp = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
-                    action: 'procesarPremioBingo',
-                    juego_id: juegoId,
-                    participante_id: partId,
-                    tabla_id: tablaId
+                    action: 'cancelarJuegoBingo',
+                    juego_id: currentAdminGameId
                 })
             });
             const res = await resp.json();
             if (res.status === 'success') {
-                sendSocketEvent('game-finished', { winner: partId });
-                alert("¡Juego finalizado!");
-                loadPendingBingoReceipts();
+                sendSocketEvent('game-cancelled', { juego_id: currentAdminGameId });
+                alert("Juego cancelado exitosamente.");
                 refreshBingoState();
             } else {
                 alert("Error: " + res.message);
             }
         } catch (e) {
-            alert("Error de conexión");
+            alert("Error de conexión al cancelar");
         }
     };
 
@@ -333,32 +379,53 @@
     }
 
     // LÓGICA DE CHAT Y VOZ ADMIN
-    async function sendAdminChatMessage() {
-        const input = document.getElementById('adminChatInput');
-        const text = input.value.trim();
-        if (!text || !currentAdminGameId) return;
 
-        input.value = '';
+    window.toggleAdminChat = function() {
+        const container = document.getElementById('adminChatContainer');
+        container.classList.toggle('active');
+        if (container.classList.contains('active')) {
+            setTimeout(() => {
+                const messages = document.getElementById('adminChatMessages');
+                messages.scrollTop = messages.scrollHeight;
+                document.getElementById('adminChatInputFloating').focus();
+            }, 50);
+        }
+    };
+
+    window.sendAdminChatFloating = async function() {
+        const input = document.getElementById('adminChatInputFloating');
+        const mensaje = input.value.trim();
+        if (!mensaje) return;
+
+        const resState = await fetch(`${API_URL}?action=getBingoState&juego_id=${currentAdminGameId || 'LATEST'}`);
+        const dataState = await resState.json();
+        const juegoId = dataState.juego_id;
+
+        if (!juegoId) {
+            alert("No hay un juego activo");
+            return;
+        }
+
         try {
-            const resp = await fetch(API_URL, {
+            await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
                     action: 'sendBingoMessage',
-                    juego_id: currentAdminGameId,
+                    juego_id: juegoId,
                     usuario_id: 'ADMIN',
                     usuario_nombre: 'ADMINISTRADOR',
-                    mensaje: text,
-                    rol: 'admin'
+                    rol: 'admin',
+                    mensaje: mensaje
                 })
             });
-            const res = await resp.json();
-            if (res.status === 'success') {
-                sendSocketEvent('chat-message', { sender: 'admin' });
-                refreshAdminChat();
-            }
-        } catch (e) { console.error("Error enviando chat admin:", e); }
-    }
+            input.value = '';
+            sendSocketEvent('new-bingo-msg', { juego_id: juegoId });
+            refreshAdminChat();
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     async function refreshAdminChat() {
         if (!currentAdminGameId) return;
@@ -380,14 +447,6 @@
             }
         } catch (e) { console.error("Error refreshing admin chat:", e); }
     }
-    async function toggleAdminVoice() {
-        alert("Modo de voz LiveKit reemplazado por comandos de texto (Próximamente)");
-    }
-
-    function cleanupAdminVoice() {
-        isVoiceActive = false;
-    }
-
     function initAdminWebSocket() {
         if (!WS_URL || socket) return;
         try {

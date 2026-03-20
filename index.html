@@ -345,6 +345,7 @@
                     <div class="card-body py-2">
                         <div class="d-flex align-items-center gap-3">
                             <strong>📅 Gestionar Sorteo:</strong>
+                            <span id="adminSorteoStatus" class="badge bg-primary">INICIANDO</span>
                             <select id="selectSorteoActivoAdmin" class="form-select" style="max-width: 300px;"
                                 onchange="cambiarSorteoAdmin(this.value)">
                                 <!-- Opciones cargadas vía JS -->
@@ -1067,7 +1068,9 @@
                 <header class="section-header">
                     <h1>Administración de Bingo</h1>
                     <div class="header-actions">
-                        <button class="btn btn-danger" id="btnToggleVoice" title="Activar Micrófono">🎤 Voz: OFF</button>
+                        <button class="btn btn-outline-danger" id="btnCancelarJuego" onclick="cancelarJuegoActual()" style="display: none;">
+                            <i class="fas fa-times-circle"></i> Cancelar Juego
+                        </button>
                         <button class="btn btn-success" id="btnCrearJuegoBingoModal">+ Nuevo Juego</button>
                         <button class="btn btn-info" id="btnOpenNewRound" style="display: none;">🔄 Abrir Nueva Ronda</button>
                     </div>
@@ -1164,18 +1167,23 @@
                     </div>
                 </div>
 
-                <!-- Chat Administrador Bingo -->
-                <div class="card mb-4 overflow-hidden">
-                    <div class="card-header card-header-bingo" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%) !important;">
-                        <h2><i class="fas fa-comments"></i> Chat del Bingo</h2>
+                <!-- Chat Administrador Bingo - MOVIDO A GLOBO FLOTANTE -->
+                <div id="adminChatContainer">
+                    <div class="admin-chat-header">
+                        <span><i class="fas fa-comments"></i> Chat del Bingo</span>
+                        <button onclick="toggleAdminChat()" style="background:transparent; border:none; color:white; cursor:pointer; font-size:1.2rem;">✕</button>
                     </div>
-                    <div class="card-body" style="height: 250px; display: flex; flex-direction: column; padding: 12px;">
-                        <div id="adminChatMessages" class="chat-messages-container" style="background: var(--bg-card); border-radius: 12px; font-size: 0.9rem; border: 1px solid var(--border-color);"></div>
-                        <div class="input-group mt-2" style="display: flex; gap: 6px;">
-                            <input type="text" id="adminChatInput" class="form-control" placeholder="Escribe a todos los socios..." style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
-                            <button class="btn btn-primary" id="btnAdminSendChat" style="padding: 10px 24px; border-radius: 8px;">Enviar</button>
-                        </div>
+                    <div id="adminChatMessages" class="chat-messages-container" style="flex:1; background: #0f172a;"></div>
+                    <div class="admin-chat-input-area">
+                        <input type="text" id="adminChatInputFloating" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter') sendAdminChatFloating()">
+                        <button onclick="sendAdminChatFloating()" style="background:#0ea5e9; border:none; border-radius:8px; width:45px; height:45px; color:white; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
                     </div>
+                </div>
+
+                <div class="admin-chat-trigger" onclick="toggleAdminChat()" title="Abrir Chat del Bingo">
+                    <i class="fas fa-comment-dots"></i>
                 </div>
 
                 <!-- Control de Voz P2P (Admin) -->
@@ -1215,6 +1223,32 @@
     </div>
 
     <!-- Modales -->
+    <div id="modalConfirmarGanador" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header card-header-bingo">
+                <h2><i class="fas fa-trophy"></i> Confirmar Ganador</h2>
+            </div>
+            <div class="modal-body p-4 text-center">
+                <p class="mb-4">Vas a confirmar a este socio como ganador del Bingo.</p>
+                <div class="alert alert-info mb-4">
+                    <strong>Premio Total:</strong> <span id="confirmarPremioMonto">$0</span>
+                </div>
+                <p>¿Cómo desea el socio recibir su premio?</p>
+                <div class="d-grid gap-3">
+                    <button id="btnPremioEfectivo" class="btn btn-primary btn-lg">
+                        <i class="fas fa-hand-holding-usd"></i> Pago en Efectivo
+                    </button>
+                    <button id="btnPremioAhorro" class="btn btn-success btn-lg">
+                        <i class="fas fa-piggy-bank"></i> Ahorrar como Aporte
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalConfirmarGanador').style.display='none'">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="modalCiclo" class="modal">
         <div class="modal-content">
             <div class="modal-header">

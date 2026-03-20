@@ -381,6 +381,10 @@ function doPost(e) {
         result = setBingoVoiceRoom(data);
         break;
 
+      case 'cancelarJuegoBingo':
+        result = cancelarJuegoBingo(data);
+        break;
+
       case 'getLiveKitToken':
         result = { 
           status: 'error', 
@@ -4149,7 +4153,8 @@ function aprobarPagoBingo(data) {
         if (String(rowsJuegos[j][jIdIdx]) === String(juegoId)) {
           const valorTabla = Number(rowsJuegos[j][valorTablaIdx] || 0);
           const bolsaActual = Number(rowsJuegos[j][totalBolsaIdx] || 0);
-          const nuevaBolsa = bolsaActual + valorTabla;
+          // REGLA: 50% para la bolsa, 50% para la natillera
+          const nuevaBolsa = bolsaActual + (valorTabla * 0.5);
           
           sheetJuegos.getRange(j + 1, totalBolsaIdx + 1).setValue(nuevaBolsa);
           
@@ -4304,7 +4309,56 @@ function procesarPremioBingo(data) {
 
       CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
 
+      // NUEVO: Registrar Premio como Aporte si el método es AHHORO
+      if (data.metodo_pago === 'AHORRO') {
+          try {
+              // Obtener la bolsa actual (premio)
+              const state = getBingoState(data.juego_id);
+              const montoPremio = state.total_bolsa || 0;
+
+              if (montoPremio > 0) {
+                  agregarAporte({
+                      participante_id: data.participante_id,
+                      monto: montoPremio,
+                      fecha: new Date().toISOString(),
+                      concepto: `PREMIO BINGO (Juego: ${data.juego_id})`,
+                      estado: 'APROBADO'
+                  });
+              }
+          } catch (errAporte) {
+              console.error("Error al registrar ahorro de premio:", errAporte);
+          }
+      }
+
       return { status: "success", message: "Juego finalizado y ganador registrado." };
+    } catch (e) {
+      return { status: "error", message: e.message };
+    }
+  });
+}
+
+/**
+ * Cancela un juego de bingo por error (Admin Only)
+ */
+function cancelarJuegoBingo(data) {
+  return executeWithLock(() => {
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(HOJAS.BINGO_JUEGOS);
+      const rows = sheet.getDataRange().getValues();
+      const headers = rows[0];
+      
+      const idIdx = headers.indexOf("id");
+      const estIdx = headers.indexOf("estado");
+
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][idIdx]) === String(data.juego_id)) {
+          sheet.getRange(i + 1, estIdx + 1).setValue('CANCELADO');
+          CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
+          return { status: "success", message: "Juego cancelado correctamente." };
+        }
+      }
+      return { status: "error", message: "Juego no encontrado" };
     } catch (e) {
       return { status: "error", message: e.message };
     }
