@@ -135,14 +135,11 @@
                 
                 const historyEl = document.getElementById('adminBallHistory');
                 if (historyEl && res.balotas) {
-                    historyEl.innerHTML = res.balotas.map(b => `<span class="badge bg-light text-dark border p-2" style="font-size:1rem">${getBingoLabel(b)}</span>`).reverse().join('');
+                    historyEl.innerHTML = res.balotas.map(b => `<div class="bingo-ball-sm">${getBingoLabel(b)}</div>`).reverse().join('');
                 }
 
                 // Sincronizar Chat
                 refreshAdminChat();
-
-                // Sincronizar Voz
-                syncAdminVoice(res.voice_room);
 
                 // Manejo de botones según estado
                 const btnCantar = document.getElementById('btnCantarBalota');
@@ -374,8 +371,8 @@
                 lastAdminChatLength = res.data.length;
                 
                 container.innerHTML = res.data.map(m => `
-                    <div style="margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-                        <strong style="color: ${m.rol === 'admin' ? '#ef4444' : '#3b82f6'}">${m.usuario_nombre}:</strong> 
+                    <div class="chat-msg ${m.rol === 'admin' ? 'msg-admin' : 'msg-socio'}">
+                        <span class="msg-name">${m.usuario_nombre}</span>
                         <span>${m.mensaje}</span>
                     </div>
                 `).join('');

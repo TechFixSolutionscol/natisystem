@@ -8,12 +8,13 @@
     <style>
         :root {
             --primary-bg: #0f172a;
-            --accent-glow: #7c3aed;
-            --bingo-gold: #f59e0b;
+            --accent-glow: #6366f1;
+            --bingo-gold: #fbbf24;
+            --ball-white: #f8fafc;
         }
 
         body {
-            background: var(--primary-bg);
+            background: radial-gradient(circle at top right, #1e1b4b, #0f172a);
             color: white;
             font-family: 'Inter', sans-serif;
             margin: 0;
@@ -21,6 +22,15 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
+        }
+
+        /* Ambient background effect */
+        body::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.05) 0%, transparent 50%);
+            pointer-events: none;
         }
 
         /* ESCENA 3D */
@@ -36,20 +46,20 @@
 
         /* TABLA DE BINGO 3D */
         .bingo-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 20px;
-            transform: rotateX(15deg) rotateY(-10deg);
-            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 1);
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 30px;
+            transform: rotateX(10deg) rotateY(-5deg);
+            transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+            box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5);
         }
 
         .bingo-card:hover {
             transform: rotateX(0deg) rotateY(0deg) scale(1.02);
             border-color: var(--accent-glow);
-            box-shadow: 0 0 30px rgba(124, 58, 237, 0.4);
+            box-shadow: 0 0 50px rgba(99, 102, 241, 0.2);
         }
 
         .bingo-grid {
@@ -103,25 +113,6 @@
             gap: 20px;
         }
 
-        .current-ball {
-            width: 100px;
-            height: 100px;
-            background: radial-gradient(circle at 30% 30%, #fff, #f59e0b);
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 3rem;
-            color: #000;
-            font-weight: 900;
-            box-shadow: 0 10px 30px rgba(245, 158, 11, 0.6);
-            animation: ballPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        @keyframes ballPop {
-            0% { transform: scale(0) rotate(-45deg); opacity: 0; }
-            100% { transform: scale(1) rotate(0deg); opacity: 1; }
-        }
 
         .ballPop {
             animation: ballPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
@@ -200,27 +191,6 @@
             font-weight: bold;
         }
 
-        #chatMessages {
-            flex: 1;
-            padding: 10px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .chat-msg {
-            padding: 8px 12px;
-            border-radius: 10px;
-            max-width: 85%;
-            font-size: 0.9rem;
-            line-height: 1.3;
-        }
-
-        .msg-socio { background: #334155; align-self: flex-start; }
-        .msg-admin { background: #f59e0b; color: #000; align-self: flex-end; font-weight: bold; }
-        .msg-name { font-size: 0.7rem; opacity: 0.7; margin-bottom: 2px; display: block; }
-
         .chat-input-area {
             padding: 10px;
             display: flex;
@@ -298,7 +268,7 @@
         <div id="lastBalls" style="display: flex; gap: 10px; opacity: 0.5;">
             <!-- Círculos pequeños de balotas anteriores -->
         </div>
-        <div id="currentBall" class="current-ball">?</div>
+        <div id="currentBall" class="bingo-ball">?</div>
         <div style="text-align: left; margin-left: 20px;">
             <div id="gameStatus" style="color: var(--bingo-gold); font-weight: bold;">ESPERANDO...</div>
             <div id="potLabel" style="font-size: 0.9rem;">Bolsa: $0</div>
@@ -331,7 +301,7 @@
             <span>Chat del Bingo</span>
             <button onclick="toggleChat()" style="background:transparent; border:none; color:white; cursor:pointer;">✕</button>
         </div>
-        <div id="chatMessages"></div>
+        <div id="chatMessages" class="chat-messages-container"></div>
         <div class="chat-input-area">
             <input type="text" id="chatInput" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter') sendChatMessage()">
             <button onclick="sendChatMessage()" style="background:var(--accent-glow); border:none; border-radius:8px; width:40px; color:white;">➤</button>

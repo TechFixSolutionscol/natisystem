@@ -2499,8 +2499,8 @@
         if (!themeToggle) return;
 
         const body = document.body;
-        const icon = themeToggle.querySelector('.icon');
-        const text = themeToggle.querySelector('.text');
+        const icon = themeToggle.querySelector('.theme-icon');
+        const text = themeToggle.querySelector('.theme-text');
 
         // Cargar preferencia guardada
         const savedTheme = localStorage.getItem('natillera_theme');

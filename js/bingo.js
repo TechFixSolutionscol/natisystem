@@ -162,7 +162,6 @@ async function syncState() {
         checkBingoWin();
         
         console.log("Estado sincronizado. Balotas:", calledBalls.length);
-
         // 6. Manejo de Estado Finalizado
         if (resp.estado === 'FINALIZADO') {
             const gameStatus = document.getElementById('gameStatus');
@@ -170,28 +169,22 @@ async function syncState() {
                 gameStatus.innerText = "¡JUEGO TERMINADO!";
                 gameStatus.style.color = "#10b981";
             }
-            // Mostrar ganador si existe
             if (resp.ganador_nombre) {
                 const potLabel = document.getElementById('potLabel');
                 if (potLabel) potLabel.innerText = `🏆 Ganador: ${resp.ganador_nombre}`;
             }
-            
-            // Detener polleo y mostrar botón de reinicio/salir
             if (pollingInterval) {
                 clearTimeout(pollingInterval);
                 pollingInterval = null;
             }
-            
             mostrarBotonNuevaRonda();
         }
 
-        // 6. Sincronizar Chat
+        // 7. Sincronizar Chat
         syncChat();
-
-        // 7. Sincronizar Voz (Web Speech API Placeholder)
-        // Se implementará con WebSockets en la siguiente fase
     }
 }
+
 async function syncChat() {
     const resp = await fetchAPI('getBingoMessages', { juego_id: currentGameId });
     if (resp.status === 'success') {
@@ -200,9 +193,12 @@ async function syncChat() {
 }
 
 function renderBallHistory() {
-    const history = document.getElementById('lastBalls');
-    const last3 = calledBalls.slice(-4, -1).reverse();
-    history.innerHTML = last3.map(b => `<div style="width:30px;height:30px;background:#fff;color:#000;border-radius:50%;display:flex;justify-content:center;align-items:center;font-size:0.8rem;font-weight:bold;">${getBingoLabel(b)}</div>`).join('');
+    const container = document.getElementById('lastBalls');
+    if (!container) return;
+    
+    // Mostrar las últimas 5 balotas (excluyendo la actual que ya está en grande)
+    const history = calledBalls.slice(0, -1).reverse().slice(0, 5);
+    container.innerHTML = history.map(b => `<div class="bingo-ball-sm" style="opacity: 0.8; transform: scale(0.8);">${getBingoLabel(b)}</div>`).join('');
 }
 
 // UTILIDADES DE COMUNICACIÓN
