@@ -50,33 +50,74 @@ async function initGame() {
     }
 }
 
-async function checkAccess() {
-    const userId = sessionStorage.getItem('natillera_id');
-    if (!userId) { window.location.href = 'login.html'; return; }
+    async function checkAccess() {
+        if (!userId) return; // FIX: Usar la variable local o sessionStorage
 
-    const resp = await fetchAPI('getMisTablas', { participante_id: userId });
-    
-    let tablaAprobada = null;
-    if (resp.status === 'success' && resp.data.length > 0) {
-        // Buscar la tabla del juego actual que esté aprobada
-        tablaAprobada = resp.data.find(t => String(t.juego_id) === String(currentGameId) && t.estado_pago === 'APROBADO');
-    }
+        const natilleraId = sessionStorage.getItem('natillera_id');
+        const bingoUploadSection = document.getElementById('uploadSection'); // En natisystem se llama uploadSection
+        const fileInput = document.getElementById('bingoReceipt');
 
-    if (tablaAprobada) {
-        document.getElementById('overlayPago').style.display = 'none';
-        myTable = JSON.parse(tablaAprobada.numeros_json);
-        renderBingoCard(myTable);
-        startSync();
-        initWebSocket();
-    } else {
-        // Si no está aprobada (o no existe aún), mostramos estado y seguimos polleando
-        document.getElementById('statusSection').style.display = 'block';
-        document.getElementById('uploadSection').style.display = 'none';
-        
-        // Polleo de aprobación: Reintentar cada 4 segundos para mayor agilidad
-        setTimeout(checkAccess, 4000);
+        if (!bingoUploadSection) return;
+
+        // Si hay un archivo seleccionado pero no enviado, mantenemos la sección visible
+        if (fileInput && fileInput.files.length > 0) {
+            console.log("Archivo en cola, pausando checkAccess UI.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`${window.API_URL}?action=getBingoState&juego_id=LATEST`);
+            const res = await response.json();
+
+            if (res.status === 'success') {
+                const currentGameId = res.juego_id;
+                
+                // Consultamos las tablas del usuario para ESTE juego específico
+                const respTablas = await fetch(`${window.API_URL}?action=getMisTablas&participante_id=${natilleraId}`);
+                const resTablas = await respTablas.json();
+
+                if (resTablas.status === 'success') {
+                    // Buscamos si el usuario ya tiene una tabla APROBADA o PENDIENTE para el juego actual
+                    const tablaActual = resTablas.data.find(t => String(t.juego_id) === String(currentGameId));
+
+                    if (tablaActual) {
+                        if (tablaActual.estado_pago === 'APROBADO') {
+                            bingoUploadSection.style.display = 'none';
+                            const overlay = document.getElementById('overlayPago');
+                            if (overlay) overlay.style.display = 'none';
+                            
+                            myTable = JSON.parse(tablaActual.numeros_json);
+                            renderBingoCard(myTable);
+                            startSync();
+                            initWebSocket();
+                            return;
+                        } else if (tablaActual.estado_pago === 'PENDIENTE') {
+                            bingoUploadSection.style.display = 'block';
+                            bingoUploadSection.innerHTML = `
+                                <div class="alert alert-info">
+                                    <h4 class="alert-heading">¡Recibo Enviado!</h4>
+                                    <p>Tu comprobante está en revisión por el administrador. En cuanto sea aprobado, tus tablas aparecerán aquí.</p>
+                                    <div class="spinner-border spinner-border-sm" role="status"></div> Esperando aprobación...
+                                </div>`;
+                            return;
+                        }
+                    }
+                }
+                
+                // Si no hay tabla o es de un juego anterior, mostrar botón de carga
+                bingoUploadSection.style.display = 'block';
+                // Solo restauramos el HTML original si el contenido actual es una alerta de espera
+                if (bingoUploadSection.querySelector('.alert')) {
+                     location.reload(); // Recarga simple para restaurar el formulario limpio
+                }
+            }
+        } catch (e) {
+            console.error("Error en checkAccess:", e);
+        }
+
+        // Re-check cada 10s si no ha entrado aún
+        setTimeout(checkAccess, 10000);
     }
-}
 
 function renderBingoCard(matrix) {
     const container = document.getElementById('bingoCardContainer');

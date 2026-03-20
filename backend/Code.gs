@@ -2893,6 +2893,128 @@ function generateAportesPDF(participanteId) {
     return { status: 'error', message: 'Fallo interno al generar PDF: ' + error.toString() };
   }
 }
+
+/**
+ * Genera un recibo PDF para un ganador de Bingo
+ */
+function generarReciboBingoPDF(participanteId, juegoId, monto, metodo) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
+    const participantes = sheetParticipantes.getDataRange().getValues();
+    const pHeaders = participantes[0];
+    const pIdIdx = pHeaders.indexOf("id");
+    const pNombreIdx = pHeaders.indexOf("nombre");
+    const pCedulaIdx = pHeaders.indexOf("cedula");
+
+    let ganador = { nombre: participanteId, cedula: 'N/A' };
+    for (let i = 1; i < participantes.length; i++) {
+        if (String(participantes[i][pIdIdx]) === String(participanteId)) {
+            ganador.nombre = participantes[i][pNombreIdx];
+            ganador.cedula = participantes[i][pCedulaIdx];
+            break;
+        }
+    }
+
+    const formatMoney = (amount) => {
+      return '$' + Number(amount).toLocaleString('es-CO');
+    };
+
+    const fechaGeneracion = new Date().toLocaleString('es-CO');
+
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; padding: 30px; line-height: 1.5; }
+            .container { max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+            .header { background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: white; padding: 30px; text-align: center; }
+            .logo { font-size: 24px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; }
+            .receipt-title { font-size: 18px; opacity: 0.9; margin: 0; }
+            
+            .content { padding: 30px; background: white; }
+            .prize-highlight { text-align: center; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin-bottom: 25px; }
+            .prize-label { font-size: 14px; color: #15803d; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+            .prize-amount { font-size: 32px; font-weight: 800; color: #166534; }
+            
+            .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 25px; }
+            .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
+            .info-row:last-child { margin-bottom: 0; border-bottom: none; }
+            .label { font-weight: 600; color: #64748b; font-size: 13px; text-transform: uppercase; }
+            .value { color: #0f172a; font-weight: 500; }
+            
+            .footer { background: #f1f5f9; padding: 20px; text-align: center; color: #64748b; font-size: 11px; }
+            .stamp { color: #94a3b8; font-style: italic; margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">NATILLERA SYSTEM</div>
+              <p class="receipt-title">Comprobante de Entrega de Premio</p>
+            </div>
+            
+            <div class="content">
+              <div class="prize-highlight">
+                <div class="prize-label">Monto del Premio</div>
+                <div class="prize-amount">${formatMoney(monto)}</div>
+              </div>
+
+              <div class="info-box">
+                <div class="info-row">
+                  <span class="label">Ganador</span>
+                  <span class="value">${ganador.nombre}</span>
+                </div>
+                <div class="info-row">
+                  <span class="label">Documento</span>
+                  <span class="value">${ganador.cedula || 'N/A'}</span>
+                </div>
+                <div class="info-row">
+                  <span class="label">ID Juego Bingo</span>
+                  <span class="value">#${juegoId}</span>
+                </div>
+                <div class="info-row">
+                  <span class="label">Método de Pago</span>
+                  <span class="value">${metodo}</span>
+                </div>
+                <div class="info-row">
+                  <span class="label">Fecha y Hora</span>
+                  <span class="value">${fechaGeneracion}</span>
+                </div>
+              </div>
+
+              <p style="font-size: 13px; color: #475569; text-align: center;">
+                Este documento certifica la entrega formal del premio correspondiente al sorteo de Bingo mencionado anteriormente.
+              </p>
+            </div>
+            
+            <div class="footer">
+              <p>Generado por Natillera System - Gestión de Ahorros y Créditos</p>
+              <div class="stamp">DOCUMENTO DIGITAL VÁLIDO SIN FIRMA</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const blob = Utilities.newBlob(htmlTemplate, "text/html", "recibo.html");
+    const pdfBlob = blob.getAs("application/pdf");
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+    const filename = `Recibo_Bingo_${juegoId}_${ganador.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+    return {
+      status: 'success',
+      filename: filename,
+      base64: base64
+    };
+
+  } catch (error) {
+    Logger.log('Error generando PDF Bingo: ' + error.toString());
+    return { status: 'error', message: 'Fallo al generar recibo: ' + error.toString() };
+  }
+}
 // ==========================================
 // FUNCIONES DE CONSULTA EXTERNA
 // ==========================================
@@ -4330,7 +4452,21 @@ function procesarPremioBingo(data) {
           }
       }
 
-      return { status: "success", message: "Juego finalizado y ganador registrado." };
+      let pdfResult = null;
+      if (data.metodo_pago === 'EFECTIVO') {
+          try {
+              const state = getBingoState(data.juego_id);
+              pdfResult = generarReciboBingoPDF(data.participante_id, data.juego_id, state.total_bolsa || 0, 'EFECTIVO');
+          } catch (errPdf) {
+              console.error("Error generando PDF de premio:", errPdf);
+          }
+      }
+
+      return { 
+          status: "success", 
+          message: "Juego finalizado y ganador registrado.",
+          pdf: pdfResult 
+      };
     } catch (e) {
       return { status: "error", message: e.message };
     }

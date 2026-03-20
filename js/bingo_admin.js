@@ -319,6 +319,16 @@
                     if (res.status === 'success') {
                         sendSocketEvent('game-finished', { winner: partId });
                         alert(`¡Juego finalizado! Ganador: ${partId}. Pago: ${metodo}`);
+                        
+                        // Descargar PDF si está disponible
+                        if (res.pdf && res.pdf.base64) {
+                            const link = document.createElement('a');
+                            link.href = `data:application/pdf;base64,${res.pdf.base64}`;
+                            link.download = res.pdf.filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }
                         loadPendingBingoReceipts();
                         refreshBingoState();
                     } else {
