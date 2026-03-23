@@ -402,7 +402,11 @@ document.getElementById('formPollaResultado').onsubmit = async function (e) {
 
     startLoading();
     try {
-        const res = await fetchBackend('registrarResultadoManualPolla', { sorteo_id: id, numero_ganador: num });
+        const res = await fetchBackend('registrarResultadoManualPolla', { 
+            sorteo_id: id, 
+            numero_ganador: num,
+            metodo_pago: 'AHORRO' // Por defecto ahorro en cierre manual rápido
+        });
         stopLoading();
         closeModal('modalPollaResultado');
         if (res.status === 'success') {
@@ -415,6 +419,47 @@ document.getElementById('formPollaResultado').onsubmit = async function (e) {
         handleError(e);
     }
 };
+
+/**
+ * Consulta la lotería de Medellín y llena el campo del número automáticamente
+ */
+async function consultarLoteriaOficial() {
+    startLoading();
+    try {
+        const res = await fetchBackend('getResultadoLoteria');
+        stopLoading();
+        if (res.status === 'success' && res.data) {
+            const numCompleto = res.data.numero;
+            // La polla usa las 2 últimas cifras
+            const dosCifras = numCompleto.toString().slice(-2).padStart(2, '0');
+            document.getElementById('pollaNumeroGanador').value = dosCifras;
+            
+            const info = `🎯 Lotería de Medellín: ${numCompleto}\nFecha: ${res.data.fecha}\n\nSe han cargado las últimas 2 cifras: ${dosCifras}`;
+            alert(info);
+        } else {
+            alert("⚠️ No se pudo obtener el resultado automático. Por favor, ingrese el número manualmente.");
+        }
+    } catch (e) {
+        handleError(e);
+    }
+}
+
+/**
+ * Fuerza el motor de procesamiento automático de sorteos pendientes
+ */
+async function forzarCierrePollaAuto() {
+    if (!confirm("Esto buscará resultados automáticos para TODOS los sorteos de la fecha actual y los cerrará si hay coincidencia. ¿Continuar?")) return;
+    
+    startLoading();
+    try {
+        const res = await fetchBackend('forzarCierrePollaAuto');
+        stopLoading();
+        alert("⚡ Motor de cierre automático lanzado. Los resultados se procesarán en segundo plano. Recargue en unos segundos para verificar.");
+        cargarSorteoActivo();
+    } catch (e) {
+        handleError(e);
+    }
+}
 
 // ----------------------------------------------------
 // 3. ASIGNACIÓN MANUAL DE NÚMEROS
@@ -685,6 +730,8 @@ window.initPollaDashboard = initPollaDashboard;
 window.abrirModalAsignarNumeroEspecifico = abrirModalAsignarNumeroEspecifico;
 window.validarSolicitud = validarSolicitud;
 window.rechazarSolicitud = rechazarSolicitud;
+window.consultarLoteriaOficial = consultarLoteriaOficial;
+window.forzarCierrePollaAuto = forzarCierrePollaAuto;
 window.closeModal = function (id) {
     document.getElementById(id).style.display = 'none';
 };

@@ -330,6 +330,7 @@
                     <div class="header-actions">
                         <button class="btn btn-warning" id="btnNotificarPolla">📢 Notificar Pendientes</button>
                         <button class="btn btn-success" id="btnNuevoSorteo">🎱 Nuevo Sorteo</button>
+                        <button class="btn btn-warning" onclick="forzarCierrePollaAuto()" title="Buscar resultados oficiales y cerrar automáticamente sorteos de hoy">⚡ Auto-Procesar</button>
                         <button class="btn btn-secondary" id="btnCerrarSorteo">🏆 Cerrar Seleccionado</button>
                         <button class="btn btn-primary" id="btnAsignarPolla">+ Asignar Número</button>
                     </div>
@@ -1357,8 +1358,13 @@
                     </div>
                     <div class="form-group">
                         <label for="pollaNumeroGanador">Número Ganador (2 cifras)</label>
-                        <input type="number" id="pollaNumeroGanador" min="0" max="99" placeholder="Ej: 42" required
-                            class="form-control" style="font-size: 2rem; text-align: center;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="number" id="pollaNumeroGanador" min="0" max="99" placeholder="00" required
+                                class="form-control" style="font-size: 2rem; text-align: center; flex: 1;">
+                            <button type="button" class="btn btn-info" onclick="consultarLoteriaOficial()" style="height: 50px;" title="Verificar resultado oficial Medellín">
+                                🎯 Consultar
+                            </button>
+                        </div>
                     </div>
                     <div class="alert alert-warning">
                         <i class="fas fa-exclamation-triangle"></i>

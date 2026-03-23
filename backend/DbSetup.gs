@@ -445,10 +445,14 @@ function configurarTriggers() {
 
 /**
  * Configura los triggers automáticos del módulo Polla.
- * (Actualmente placeholder - expandir según sea necesario)
  */
 function configurarTriggersPolla() {
-  return { status: 'success', message: 'Triggers de Polla configurados' };
+  try {
+    // Esta función está definida en Polla_Automation.gs
+    return setupAutomationTrigger();
+  } catch (e) {
+    return { status: 'error', message: 'Error configurando automatización: ' + e.message };
+  }
 }
 
 

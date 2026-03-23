@@ -161,6 +161,10 @@ function doGet(e) {
         result = getMisTablas(e.parameter.participante_id);
         break;
 
+      case 'getResultadoLoteria':
+        result = { status: 'success', data: getResultadoLoteriaMedellin() };
+        break;
+
       case 'getTablasBingo':
         result = getTablasBingo(e.parameter.juego_id);
         break;
@@ -342,6 +346,11 @@ function doPost(e) {
 
       case 'configurarTriggersPolla':
         result = configurarTriggersPolla();
+        break;
+
+      case 'forzarCierrePollaAuto':
+        result = { status: 'success', message: 'Procesamiento manual lanzado' };
+        procesarSorteosPendientes();
         break;
 
       case 'enviarRecordatorios':
@@ -3554,10 +3563,12 @@ function registrarResultadoManualPolla(data) {
       const sheetSorteos = ss.getSheetByName(HOJAS.POLLA_SORTEOS);
       const sheetNumeros = ss.getSheetByName(HOJAS.POLLA_NUMEROS);
       const sheetConfig = ss.getSheetByName(HOJAS.POLLA_CONFIG);
+      const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
       
       const targetSorteoId = data.sorteo_id;
       const esAcumulado = String(data.numero_ganador).toUpperCase() === 'ACUMULADO';
-      const ganadorNum = esAcumulado ? 'ACUMULADO' : parseInt(data.numero_ganador);
+      const ganadorNum = esAcumulado ? 'ACUMULADO' : parseInt(data.numero_ganador, 10);
+      const metodoPago = data.metodo_pago || 'AHORRO'; // Por defecto a ahorro
       
       if (!targetSorteoId) return { status: 'error', message: 'ID de sorteo no proporcionado' };
       if (!esAcumulado && isNaN(ganadorNum)) return { status: 'error', message: 'Número ganador inválido' };
@@ -3579,52 +3590,76 @@ function registrarResultadoManualPolla(data) {
       
       const valorNumero = Number(configData[1]);
       const fechaSorteo = configData[2];
+      const temaSorteo = configData[3] || 'Polla Loca';
 
-      // 2. Calcular Recaudo y marcar ganadores en Polla_Numeros
+      // 2. Calcular Recaudo y encontrar TODOS los ganadores
       let totalRecaudo = 0;
-      let ganadorId = 'ACUMULADO';
+      let ganadoresIds = [];
 
       if (sheetNumeros) {
         const dataNums = sheetNumeros.getDataRange().getValues();
         for (let i = 1; i < dataNums.length; i++) {
           if (String(dataNums[i][4]) === String(targetSorteoId)) {
             const estadoPolla = String(dataNums[i][5]).toUpperCase();
-            const pagado = dataNums[i][3]; // Col D (index 3)
+            const pagado = dataNums[i][3];
             
             if (estadoPolla === 'PAGADO' || pagado === true || pagado === 'TRUE') {
               totalRecaudo += valorNumero;
               
-              // Solo buscar ganador si NO es un cierre por acumulado (traslado al fondo)
-              if (!esAcumulado && parseInt(dataNums[i][1]) === ganadorNum) {
-                ganadorId = dataNums[i][0]; // Col A (index 0)
-                sheetNumeros.getRange(i + 1, 6).setValue('GANADOR'); // Col F (index 5 -> Column 6)
+              if (!esAcumulado && parseInt(dataNums[i][1], 10) === ganadorNum) {
+                ganadoresIds.push(dataNums[i][0]); // ID del participante (Col A)
+                sheetNumeros.getRange(i + 1, 6).setValue('GANADOR'); 
               }
             }
           }
         }
       }
       
-      // 3. ARCHIVAR EN EL HISTORIAL (Polla_Sorteos)
+      // 3. Distribución de Premios / Traslado a Actividades
+      let resultadoFinanciero = "";
+      if (ganadoresIds.length > 0) {
+        // CASO: GANADOR FÍSICO (No afecta el sistema contable según requerimiento del usuario)
+        resultadoFinanciero = `Premio de ${formatCurrency(totalRecaudo)} para ${ganadoresIds.length} ganador(es) (Entrega física fuera del sistema).`;
+      } else {
+        // CASO: SI NO GANA SE VA A LAS ACTIVIDADES PARA LOS INTERESES
+        if (totalRecaudo > 0) {
+          agregarActividad({
+            nombre: `Polla Loca - Traslado Vacante`,
+            descripcion: `Sorteo ${temaSorteo} (${targetSorteoId}). Número ganador: ${ganadorNum}. Sin ganadores registrados.`,
+            monto_generado: totalRecaudo,
+            fecha: new Date().toISOString(),
+            responsable: 'SISTEMA'
+          });
+          resultadoFinanciero = `Bolsa de ${formatCurrency(totalRecaudo)} trasladada a Actividades (Sin ganador).`;
+        } else {
+          resultadoFinanciero = "Sorteo sin recaudo.";
+        }
+      }
+
+      // 4. ARCHIVAR EN EL HISTORIAL (Polla_Sorteos)
       sheetSorteos.appendRow([
         targetSorteoId,
         fechaSorteo,
         ganadorNum,
-        ganadorId,
+        ganadoresIds.length > 0 ? ganadoresIds.join(', ') : 'ACUMULADO',
         totalRecaudo,
-        ganadorId === 'ACUMULADO' ? 'ACUMULADO' : 'GANADO',
+        ganadoresIds.length > 0 ? 'GANADO' : 'ACUMULADO',
         new Date()
       ]);
       
-      // 4. Eliminar de Polla_Config
+      // 5. Eliminar de Polla_Config
       sheetConfig.deleteRow(configRowIndex);
       
       return { 
           status: 'success', 
-          message: `Sorteo ${targetSorteoId} cerrado. Ganador: ${ganadorId}. Recaudo: ${totalRecaudo}` 
+          message: `Sorteo cerrado exitosamente. ${resultadoFinanciero}`,
+          recaudo: totalRecaudo,
+          ganadores: ganadoresIds
       };
 
     } catch (e) {
-      return { status: 'error', message: 'Error en registro manual: ' + e.message };
+      console.error("Error en registrarResultadoManualPolla:", e);
+      return { status: 'error', message: 'Error cerrando sorteo: ' + e.message };
     }
   });
 }

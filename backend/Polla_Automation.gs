@@ -111,9 +111,14 @@ function getResultadoLoteriaMedellin() {
  */
 function procesarCierreAutomatico(sorteo, numeroGanadorDosCifras, numeroCompleto) {
   try {
-    // 1. Buscar si hay ganadores para esas 2 cifras
+    Logger.log(`Procesando cierre para sorteo ${sorteo.id} con número ${numeroGanadorDosCifras}...`);
+    
+    // 1. Obtener números para verificar si hay ganadores (solo para el log de la automatización)
     const respNums = getPollaNumerosPorSorteo(sorteo.id);
-    if (respNums.status !== 'success') return;
+    if (respNums.status !== 'success') {
+      Logger.log("Error obteniendo números para el cierre.");
+      return;
+    }
 
     const numerosSorteo = respNums.data;
     const ganadores = numerosSorteo.filter(n => 
@@ -121,42 +126,36 @@ function procesarCierreAutomatico(sorteo, numeroGanadorDosCifras, numeroCompleto
       String(n.estado_polla).toUpperCase() === 'PAGADO'
     );
 
-    if (ganadores.length > 0) {
-      // CASO: HAY GANADOR
-      const ganador = ganadores[0]; // Tomamos el primero por lógica de negocio
-      const totalBolsa = calcularTotalBolsa(numerosSorteo);
-      
-      Logger.log(`¡Ganador encontrado! ${ganador.nombre_participante} con el número ${ganador.numero}`);
-      
-      // Cerrar en el backend de Code.gs (reutilizamos lógica manual pero automatizada)
-      registrarResultadoManualPolla({
-        sorteo_id: sorteo.id,
-        numero_ganador: numeroGanadorDosCifras,
-        comentario: `Cierre automático (Lotería de Med: ${numeroCompleto})`
-      });
+    const esAcumulado = ganadores.length === 0;
+    const numeroFinal = esAcumulado ? 'ACUMULADO' : numeroGanadorDosCifras;
 
-      // Notificar por correo
-      enviarEmailGanador(ganador, totalBolsa, sorteo, numeroCompleto);
+    Logger.log(esAcumulado ? "No se detectaron ganadores pagados. Se marcará como ACUMULADO." : `Se detectaron ${ganadores.length} ganador(es).`);
 
-    } else {
-      // CASO: NO HAY GANADOR -> TRASLADAR AL FONDO DE ACTIVIDADES
-      Logger.log(`No hubo ganadores para el número ${numeroGanadorDosCifras}. Trasladando bolsa al fondo.`);
-      const totalBolsa = calcularTotalBolsa(numerosSorteo);
+    // 2. Ejecutar el cierre centralizado en Code.gs
+    // Esta función ahora maneja el Aporte al socio o el Traslado a Actividades automáticamente
+    const resultCierre = registrarResultadoManualPolla({
+      sorteo_id: sorteo.id,
+      numero_ganador: numeroFinal,
+      metodo_pago: 'AHORRO',
+      comentario: `Cierre automático (Lotería: ${numeroCompleto})`
+    });
+
+    if (resultCierre.status === 'success') {
+      Logger.log(`✅ Cierre exitoso: ${resultCierre.message}`);
       
-      if (totalBolsa > 0) {
-        trasladarBolsaAFondoActividades(sorteo, totalBolsa, numeroCompleto);
+      // 3. Notificaciones opcionales
+      if (!esAcumulado) {
+        const totalBolsa = resultCierre.recaudo || 0;
+        ganadores.forEach(g => {
+          enviarEmailGanador(g, totalBolsa / ganadores.length, sorteo, numeroCompleto);
+        });
       }
-
-      // Cerrar sorteo marcándolo como ACUMULADO
-      registrarResultadoManualPolla({
-        sorteo_id: sorteo.id,
-        numero_ganador: 'ACUMULADO',
-        comentario: `Sin ganador (Lotería de Med: ${numeroCompleto}). Bolsa trasladada a Actividades.`
-      });
+    } else {
+      Logger.log(`❌ Fallo en el cierre centralizado: ${resultCierre.message}`);
     }
 
   } catch (error) {
-    Logger.log(`Error cerrando sorteo ${sorteo.id}: ${error.message}`);
+    Logger.log(`Error crítico en procesarCierreAutomatico ${sorteo.id}: ${error.message}`);
   }
 }
 
