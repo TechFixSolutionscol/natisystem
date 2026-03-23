@@ -513,27 +513,34 @@ function formatCurrency(amount) {
   return "$" + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+// Variable global para controlar la reentrada del bloqueo en la misma ejecución
+var _lockDepth = 0;
+
 /**
- * Ejecuta una función dentro de un bloqueo (LockService)
- * para evitar condiciones de carrera (escrituras simultáneas)
+ * Ejecuta una función dentro de un bloqueo (LockService) de forma segura.
+ * Soporta reentrada (bloqueos anidados en la misma ejecución).
  * @param {Function} callback - Función a ejecutar
  * @returns {Object} Resultado de la función o error de bloqueo
  */
 function executeWithLock(callback) {
   const lock = LockService.getScriptLock();
+  let acquiredHere = false;
   
   try {
-    // Intentar obtener el bloqueo por 30 segundos
-    const hasLock = lock.tryLock(30000);
-    
-    if (!hasLock) {
-      return { 
-        status: 'error', 
-        message: 'El sistema está ocupado. Por favor intente de nuevo en unos segundos.' 
-      };
+    // Si no tenemos el bloqueo aún, intentamos obtenerlo
+    if (_lockDepth === 0) {
+      const hasLock = lock.tryLock(30000); // 30 segundos
+      if (!hasLock) {
+        return { 
+          status: 'error', 
+          message: 'El sistema está ocupado. Por favor intente de nuevo en unos segundos.' 
+        };
+      }
+      acquiredHere = true;
     }
     
-    // Ejecutar la función crítica
+    // Aumentar profundidad y ejecutar
+    _lockDepth++;
     return callback();
     
   } catch (error) {
@@ -542,8 +549,11 @@ function executeWithLock(callback) {
       message: `Error inesperado: ${error.message}` 
     };
   } finally {
-    // Siempre liberar el bloqueo
-    lock.releaseLock();
+    // Solo liberamos el bloqueo físico si lo obtuvimos en este nivel y ya no hay profundidad
+    _lockDepth--;
+    if (acquiredHere && _lockDepth === 0) {
+      lock.releaseLock();
+    }
   }
 }
 

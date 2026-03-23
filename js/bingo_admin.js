@@ -156,18 +156,29 @@
 
     async function loadPendingBingoReceipts() {
         try {
-            const response = await fetch(`${API_URL}?action=getBingoState&juego_id=LATEST`); // Reusamos para sacar el ID
-            const res = await response.json();
-            if (res.status !== 'success') return;
+            let juegoIdBusqueda = currentAdminGameId;
+            
+            if (!juegoIdBusqueda) {
+                const response = await fetch(`${API_URL}?action=getBingoState&juego_id=LATEST`);
+                const res = await response.json();
+                if (res.status === 'success') {
+                    juegoIdBusqueda = res.juego_id;
+                    currentAdminGameId = res.juego_id;
+                }
+            }
 
-            // Aseguramos que usamos el ID del juego actual (res.juego_id) o el global
-            const juegoIdBusqueda = currentAdminGameId || res.juego_id;
-            if (!juegoIdBusqueda) return;
+            if (!juegoIdBusqueda) {
+                document.getElementById('bingoApprovalTableBody').innerHTML = '<tr><td colspan="4" class="text-center">No hay juegos activos</td></tr>';
+                document.getElementById('bingoWinnerTableBody').innerHTML = '<tr><td colspan="2" class="text-center">No hay juegos activos</td></tr>';
+                return;
+            }
 
             const respTablas = await fetch(`${API_URL}?action=getTablasBingo&juego_id=${juegoIdBusqueda}`);
             const dataTablas = await respTablas.json();
 
             const tbody = document.getElementById('bingoApprovalTableBody');
+            const tbodyWinners = document.getElementById('bingoWinnerTableBody');
+
             if (dataTablas.status === 'success') {
                 const pendientes = dataTablas.data.filter(t => t.estado_pago === 'PENDIENTE');
                 const reclamos = dataTablas.data.filter(t => t.estado === 'RECLAMANDO');
@@ -189,7 +200,6 @@
                 }
 
                 // Reclamos de Bingo
-                const tbodyWinners = document.getElementById('bingoWinnerTableBody');
                 if (reclamos.length === 0) {
                     tbodyWinners.innerHTML = '<tr><td colspan="2" class="text-center">No hay reclamos de Bingo pendientes</td></tr>';
                 } else {
@@ -197,7 +207,7 @@
                         <tr>
                             <td>${t.participante_nombre || t.participante_id}</td>
                             <td>
-                                <button onclick="confirmarGanador('${res.juego_id}', '${t.participante_id}', '${t.id}')" class="btn btn-sm btn-primary">Confirmar Ganador</button>
+                                <button onclick="confirmarGanador('${juegoIdBusqueda}', '${t.participante_id}', '${t.id}')" class="btn btn-sm btn-primary">Confirmar Ganador</button>
                             </td>
                         </tr>
                     `).join('');
@@ -407,12 +417,17 @@
         const mensaje = input.value.trim();
         if (!mensaje) return;
 
-        const resState = await fetch(`${API_URL}?action=getBingoState&juego_id=${currentAdminGameId || 'LATEST'}`);
-        const dataState = await resState.json();
-        const juegoId = dataState.juego_id;
+        let juegoId = currentAdminGameId;
+        
+        if (!juegoId) {
+            const resState = await fetch(`${API_URL}?action=getBingoState&juego_id=LATEST`);
+            const dataState = await resState.json();
+            juegoId = dataState.juego_id;
+            currentAdminGameId = juegoId;
+        }
 
         if (!juegoId) {
-            alert("No hay un juego activo");
+            alert("No hay un juego activo para enviar mensajes.");
             return;
         }
 

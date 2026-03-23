@@ -1,17 +1,26 @@
 // BINGO 3D - CLIENT LOGIC
+// Configuración y variables globales
 window.API_URL = 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec';
 window.WS_URL = 'wss://natisystem.onrender.com';
+
 let currentGameId = null;
 let myTable = null;
 let calledBalls = [];
 let pollingInterval = null;
-let currentModoJuego = 'FULL';
+let currentModoJuego = 'FULL'; // FULL, LINEA, CUATRO_ESQUINAS
+const MIN_POLL = 2000;
+const MAX_POLL = 5000;
+
+// Utilidad de formato de moneda (local)
+function formatCurrency(amount) {
+    if (isNaN(amount)) return "$0";
+    return "$" + Number(amount).toLocaleString('es-CO', { minimumFractionDigits: 0 });
+}
+
 let socket = null;
 let socioIdentity = sessionStorage.getItem('natillera_id') || `socio_${Math.floor(Math.random()*1000)}`;
 
 // Configuración de Polling
-const MIN_POLL = 3000;
-const MAX_POLL = 5000;
 let lastChatLength = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -30,122 +39,161 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initGame() {
-    // 0. Verificar Sesión
+    console.log("Iniciando Bingo Cliente...");
     const userId = sessionStorage.getItem('natillera_id');
     if (!userId || userId === 'undefined') {
-        alert("Sesión no válida o expirada. Por favor, busca tu cédula nuevamente en el panel de consulta.");
+        console.warn("No hay sesión de usuario.");
+        alert("Sesión no válida o expirada. Por favor, busca tu cédula nuevamente.");
         window.location.href = 'consulta.html';
         return;
     }
 
-    // 1. Obtener Juego Activo
-    const resp = await fetchAPI('getBingoState', { juego_id: 'LATEST' });
-    if (resp && resp.status === 'success') {
-        currentGameId = resp.juego_id;
-        document.getElementById('valorTablaLabel').innerText = formatCurrency(resp.valor_tabla);
-        checkAccess();
-    } else {
-        const errorMsg = resp && resp.message ? resp.message : "No se pudo conectar con el servidor";
-        document.getElementById('uploadSection').innerHTML = `<div class="alert alert-warning">⚠️ ${errorMsg}. Por favor, contacta al administrador.</div>`;
+    try {
+        console.log("Obteniendo estado del juego...");
+        const resp = await fetch(`${window.API_URL}?action=getBingoState&juego_id=LATEST`);
+        const res = await resp.json();
+        
+        if (res && res.status === 'success') {
+            currentGameId = res.juego_id;
+            console.log("Juego Activo:", currentGameId);
+            
+            const valorLabel = document.getElementById('valorTablaLabel');
+            if (valorLabel) valorLabel.innerText = formatCurrency(res.valor_tabla);
+            
+            const myTableData = await checkAccess();
+            if (myTableData) {
+                console.log("Acceso concedido. Renderizando tabla...");
+                myTable = myTableData;
+                renderBingoCard(myTable);
+                startSync();
+                initWebSocket();
+            } else {
+                console.log("Acceso bloqueado o pendiente.");
+            }
+        } else {
+            const errorMsg = res && res.message ? res.message : "No hay juegos activos";
+            document.getElementById('gameStatus').innerText = "SIN JUEGO";
+            const bingoUploadSection = document.getElementById('uploadSection');
+            if (bingoUploadSection) {
+                bingoUploadSection.innerHTML = `<div class="alert alert-warning">⚠️ ${errorMsg}.</div>`;
+            }
+            console.log("Estado:", errorMsg);
+        }
+    } catch (e) {
+        console.error("Error inicializando juego:", e);
+        alert("Error de conexión. Por favor recarga la página.");
     }
 }
 
-    async function checkAccess() {
-        if (!userId) return; // FIX: Usar la variable local o sessionStorage
+async function checkAccess() {
+    const userId = sessionStorage.getItem('natillera_id');
+    const overlay = document.getElementById('overlayPago');
+    const uploadSection = document.getElementById('uploadSection');
+    const statusSection = document.getElementById('statusSection');
+    const statusMsg = document.getElementById('statusMsg');
 
-        const natilleraId = sessionStorage.getItem('natillera_id');
-        const bingoUploadSection = document.getElementById('uploadSection'); // En natisystem se llama uploadSection
-        const fileInput = document.getElementById('bingoReceipt');
+    if (!userId) {
+        console.warn("checkAccess: No userId");
+        return null;
+    }
 
-        if (!bingoUploadSection) return;
+    try {
+        console.log(`Verificando tablas para usuario: ${userId} en juego: ${currentGameId}`);
+        const resp = await fetch(`${window.API_URL}?action=getMisTablas&participante_id=${userId}`);
+        const res = await resp.json();
 
-        // Si hay un archivo seleccionado pero no enviado, mantenemos la sección visible
-        if (fileInput && fileInput.files.length > 0) {
-            console.log("Archivo en cola, pausando checkAccess UI.");
-            return;
-        }
+        console.log("Tablas del usuario recibidas:", JSON.stringify(res.data));
 
-        try {
-            const response = await fetch(`${window.API_URL}?action=getBingoState&juego_id=LATEST`);
-            const res = await response.json();
+        if (res.status === 'success' && res.data) {
+            // Comparación robusta de IDs alfanuméricos (trim y case-insensitive por si acaso)
+            const idBuscado = String(currentGameId || '').trim().toLowerCase();
+            const tablaActual = res.data.find(t => String(t.juego_id || '').trim().toLowerCase() === idBuscado);
 
-            if (res.status === 'success') {
-                const currentGameId = res.juego_id;
-                
-                // Consultamos las tablas del usuario para ESTE juego específico
-                const respTablas = await fetch(`${window.API_URL}?action=getMisTablas&participante_id=${natilleraId}`);
-                const resTablas = await respTablas.json();
-
-                if (resTablas.status === 'success') {
-                    // Buscamos si el usuario ya tiene una tabla APROBADA o PENDIENTE para el juego actual
-                    const tablaActual = resTablas.data.find(t => String(t.juego_id) === String(currentGameId));
-
-                    if (tablaActual) {
-                        if (tablaActual.estado_pago === 'APROBADO') {
-                            bingoUploadSection.style.display = 'none';
-                            const overlay = document.getElementById('overlayPago');
-                            if (overlay) overlay.style.display = 'none';
-                            
-                            myTable = JSON.parse(tablaActual.numeros_json);
-                            renderBingoCard(myTable);
-                            startSync();
-                            initWebSocket();
-                            return;
-                        } else if (tablaActual.estado_pago === 'PENDIENTE') {
-                            bingoUploadSection.style.display = 'block';
-                            bingoUploadSection.innerHTML = `
-                                <div class="alert alert-info">
-                                    <h4 class="alert-heading">¡Recibo Enviado!</h4>
-                                    <p>Tu comprobante está en revisión por el administrador. En cuanto sea aprobado, tus tablas aparecerán aquí.</p>
-                                    <div class="spinner-border spinner-border-sm" role="status"></div> Esperando aprobación...
-                                </div>`;
-                            return;
-                        }
+            if (tablaActual) {
+                console.log("Tabla encontrada. Estado pago:", tablaActual.estado_pago);
+                if (tablaActual.estado_pago === 'APROBADO') {
+                    if (overlay) overlay.style.display = 'none';
+                    if (!tablaActual.numeros_json) {
+                        console.error("Error: numeros_json está vacío");
+                        return null;
                     }
-                }
-                
-                // Si no hay tabla o es de un juego anterior, mostrar botón de carga
-                bingoUploadSection.style.display = 'block';
-                // Solo restauramos el HTML original si el contenido actual es una alerta de espera
-                if (bingoUploadSection.querySelector('.alert')) {
-                     location.reload(); // Recarga simple para restaurar el formulario limpio
+                    try {
+                        return JSON.parse(tablaActual.numeros_json);
+                    } catch (errJson) {
+                        console.error("Error al parsear numeros_json:", errJson);
+                        return null;
+                    }
+                } else if (tablaActual.estado_pago === 'PENDIENTE') {
+                    if (overlay) overlay.style.display = 'flex';
+                    if (uploadSection) uploadSection.style.display = 'none';
+                    if (statusSection) {
+                        statusSection.style.display = 'block';
+                        statusMsg.innerText = "⌛ Tu pago está en revisión administrativa. Por favor espera...";
+                    }
+                    setTimeout(checkAccess, 10000);
+                    return null;
                 }
             }
-        } catch (e) {
-            console.error("Error en checkAccess:", e);
         }
 
-        // Re-check cada 10s si no ha entrado aún
-        setTimeout(checkAccess, 10000);
+        // Si no hay tabla para este juego, mostramos el formulario de carga
+        console.log("No se encontró tabla para este juego. Mostrando overlay de pago.");
+        if (overlay) overlay.style.display = 'flex';
+        if (uploadSection) uploadSection.style.display = 'block';
+        if (statusSection) statusSection.style.display = 'none';
+        return null;
+
+    } catch (e) {
+        console.error("Error en checkAccess:", e);
+        return null;
     }
+}
 
 function renderBingoCard(matrix) {
+    console.log("renderBingoCard: Iniciando renderizado...");
     const container = document.getElementById('bingoCardContainer');
-    let html = `<div class="bingo-card">`;
-    
-    // Cabecera B I N G O
-    html += `<div class="bingo-header">
-                <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
-             </div>`;
-    
-    html += `<div class="bingo-grid">`;
-    
-    // El formato de la matriz es col-major para facilitar la generación (B, I, N, G, O)
-    // Pero lo renderizamos fila por fila
-    for (let row = 0; row < 5; row++) {
-        for (let col = 0; col < 5; col++) {
-            const val = matrix[col][row];
-            const isFree = val === 'FREE';
-            html += `<div class="bingo-cell ${isFree ? 'marked' : ''}" 
-                          onclick="markCell(this)" 
-                          data-val="${val}">
-                          ${isFree ? '★' : val}
-                     </div>`;
-        }
+    if (!container) {
+        console.error("Error: bingoCardContainer no existe en el DOM");
+        return;
     }
-    
-    html += `</div></div>`;
-    container.innerHTML = html;
+
+    if (!Array.isArray(matrix) || matrix.length < 5) {
+        console.error("Error: La matriz de bingo es inválida o no tiene las dimensiones correctas", matrix);
+        return;
+    }
+
+    try {
+        let html = `<div class="bingo-card">`;
+        
+        // Cabecera B I N G O
+        html += `<div class="bingo-header">
+                    <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+                 </div>`;
+        
+        html += `<div class="bingo-grid">`;
+        
+        // El formato de la matriz es col-major (matrix[col][row])
+        for (let row = 0; row < 5; row++) {
+            for (let col = 0; col < 5; col++) {
+                if (!matrix[col] || matrix[col][row] === undefined) {
+                    console.warn(`Celda faltante en [${col}][${row}]`);
+                }
+                const val = (matrix[col] && matrix[col][row] !== undefined) ? matrix[col][row] : '?';
+                const isFree = val === 'FREE';
+                html += `<div class="bingo-cell ${isFree ? 'marked' : ''}" 
+                              onclick="markCell(this)" 
+                              data-val="${val}">
+                              ${isFree ? '★' : val}
+                         </div>`;
+            }
+        }
+        
+        html += `</div></div>`;
+        container.innerHTML = html;
+        console.log("renderBingoCard: Renderizado completado.");
+    } catch (err) {
+        console.error("Fallo crítico en renderBingoCard:", err);
+    }
 }
 
 function markCell(cell) {
@@ -201,24 +249,44 @@ async function syncState() {
         
         currentModoJuego = resp.modo_juego || 'FULL';
         checkBingoWin();
+
+        // 5.5 Actualizar Bolsa y Estado Real-time
+        const potLabel = document.getElementById('potLabel');
+        if (potLabel) {
+            potLabel.innerText = `Bolsa: ${formatCurrency(resp.total_bolsa || 0)}`;
+        }
+
+        const gameStatus = document.getElementById('gameStatus');
+        if (gameStatus && resp.estado !== 'FINALIZADO' && resp.estado !== 'CANCELADO') {
+            if (newBalls.length > 0) {
+                gameStatus.innerText = "JUEGO EN CURSO";
+                gameStatus.style.color = "#3b82f6";
+            } else {
+                gameStatus.innerText = "ESPERANDO INICIO...";
+                gameStatus.style.color = "#94a3b8";
+            }
+        }
         
         console.log("Estado sincronizado. Balotas:", calledBalls.length);
         // 6. Manejo de Estado Finalizado
         if (resp.estado === 'FINALIZADO') {
-            const gameStatus = document.getElementById('gameStatus');
             if (gameStatus) {
                 gameStatus.innerText = "¡JUEGO TERMINADO!";
                 gameStatus.style.color = "#10b981";
             }
-            if (resp.ganador_nombre) {
-                const potLabel = document.getElementById('potLabel');
-                if (potLabel) potLabel.innerText = `🏆 Ganador: ${resp.ganador_nombre}`;
+            if (resp.ganador_nombre && potLabel) {
+                potLabel.innerText = `🏆 Ganador: ${resp.ganador_nombre}`;
             }
             if (pollingInterval) {
                 clearTimeout(pollingInterval);
                 pollingInterval = null;
             }
             mostrarBotonNuevaRonda();
+        } else if (resp.estado === 'CANCELADO') {
+            if (gameStatus) {
+                gameStatus.innerText = "JUEGO CANCELADO";
+                gameStatus.style.color = "#ef4444";
+            }
         }
 
         // 7. Sincronizar Chat
@@ -484,6 +552,10 @@ function announceBall(ballCode) {
 
 function initWebSocket() {
     if (!window.WS_URL || socket) return;
+    
+    // Asegurar identidad actualizada
+    socioIdentity = sessionStorage.getItem('natillera_id') || socioIdentity;
+    
     try {
         socket = new WebSocket(window.WS_URL);
         socket.onopen = () => {

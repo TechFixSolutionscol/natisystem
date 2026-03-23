@@ -65,12 +65,6 @@
             </nav>
 
             <div class="sidebar-footer">
-                <div class="theme-switch-wrapper mb-3" style="padding: 0 5px;">
-                    <button id="themeToggle" class="theme-btn">
-                        <span class="theme-icon">🌙</span>
-                        <span class="theme-text">Modo Oscuro</span>
-                    </button>
-                </div>
                 <div class="user-info">
                     <span class="user-name" id="userName">Usuario</span>
                     <button id="logoutBtn" class="btn-logout">Cerrar Sesión</button>
@@ -1068,6 +1062,9 @@
                 <header class="section-header">
                     <h1>Administración de Bingo</h1>
                     <div class="header-actions">
+                        <button id="themeToggle" class="btn btn-outline-secondary me-2">
+                           <span class="theme-icon">🌙</span>
+                        </button>
                         <button class="btn btn-outline-danger" id="btnCancelarJuego" onclick="cancelarJuegoActual()" style="display: none;">
                             <i class="fas fa-times-circle"></i> Cancelar Juego
                         </button>
