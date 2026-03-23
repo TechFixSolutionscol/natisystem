@@ -4474,42 +4474,55 @@ function procesarPremioBingo(data) {
         rol: 'admin'
       });
 
+      const state = getBingoState(data.juego_id);
+      const bolsaTotal = state.total_bolsa || 0;
+      const montoGanador = bolsaTotal * 0.5;
+      const montoActividades = bolsaTotal * 0.5;
+
       CacheService.getScriptCache().remove("bingo_state_" + data.juego_id);
 
-      // NUEVO: Registrar Premio como Aporte si el método es AHHORO
-      if (data.metodo_pago === 'AHORRO') {
+      // 1. Trasladar el 50% a Actividades automáticamente
+      if (montoActividades > 0) {
           try {
-              // Obtener la bolsa actual (premio)
-              const state = getBingoState(data.juego_id);
-              const montoPremio = state.total_bolsa || 0;
+              agregarActividad({
+                  nombre: `Bingo - Comisión Natillera`,
+                  descripcion: `50% de la bolsa del juego: ${data.juego_id}. Ganador: ${data.participante_id}.`,
+                  monto_generado: montoActividades,
+                  fecha: new Date().toISOString(),
+                  responsable: 'SISTEMA'
+              });
+          } catch (errAct) {
+              console.error("Error trasladando comisión de bingo a actividades:", errAct);
+          }
+      }
 
-              if (montoPremio > 0) {
-                  agregarAporte({
-                      participante_id: data.participante_id,
-                      monto: montoPremio,
-                      fecha: new Date().toISOString(),
-                      concepto: `PREMIO BINGO (Juego: ${data.juego_id})`,
-                      estado: 'APROBADO'
-                  });
-              }
+      // 2. Registrar el 50% para el Ganador (Aporte si es AHORRO)
+      if (data.metodo_pago === 'AHORRO' && montoGanador > 0) {
+          try {
+              agregarAporte({
+                  participante_id: data.participante_id,
+                  monto: montoGanador,
+                  fecha: new Date().toISOString(),
+                  concepto: `PREMIO BINGO (50% de Bolsa - Juego: ${data.juego_id})`,
+                  estado: 'APROBADO'
+              });
           } catch (errAporte) {
-              console.error("Error al registrar ahorro de premio:", errAporte);
+              console.error("Error al registrar ahorro de premio bingo:", errAporte);
           }
       }
 
       let pdfResult = null;
-      if (data.metodo_pago === 'EFECTIVO') {
+      if (data.metodo_pago === 'EFECTIVO' && montoGanador > 0) {
           try {
-              const state = getBingoState(data.juego_id);
-              pdfResult = generarReciboBingoPDF(data.participante_id, data.juego_id, state.total_bolsa || 0, 'EFECTIVO');
+              pdfResult = generarReciboBingoPDF(data.participante_id, data.juego_id, montoGanador, 'EFECTIVO');
           } catch (errPdf) {
-              console.error("Error generando PDF de premio:", errPdf);
+              console.error("Error generando PDF de premio bingo:", errPdf);
           }
       }
 
       return { 
           status: "success", 
-          message: "Juego finalizado y ganador registrado.",
+          message: `Juego finalizado. Bolsa split 50/50: ${formatCurrency(montoGanador)} para ganador y ${formatCurrency(montoActividades)} para actividades.`,
           pdf: pdfResult 
       };
     } catch (e) {
