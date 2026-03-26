@@ -399,30 +399,11 @@ function tomarDecisionAdminCucaracha(partidaId, decision) {
     if (index === -1) throw new Error("Partida no encontrada");
 
     if (decision === 'REINICIAR_PARTIDA') {
-      // RESET TOTAL DE JUGADORES (Mantiene los que están aprobados)
-      const sheetJ = ss.getSheetByName(HOJAS.CUCARACHA_JUGADORES);
-      const dataJ = sheetJ.getDataRange().getValues();
-      const headersJ = dataJ[0];
-      const colProgreso = headersJ.indexOf('progreso_json');
-      const colPiezas = headersJ.indexOf('piezas_completadas');
-      const colDecision = headersJ.indexOf('decision_actual');
-
-      for (let i = 1; i < dataJ.length; i++) {
-        if (String(dataJ[i][0]) === String(partidaId)) {
-          sheetJ.getRange(i + 1, colProgreso + 1).setValue(JSON.stringify({ piezas_marcadas: [], dados_guardados: 0 }));
-          sheetJ.getRange(i + 1, colPiezas + 1).setValue(0);
-          sheetJ.getRange(i + 1, colDecision + 1).setValue('');
-        }
-      }
-
-      // Reset Partida
-      sheetP.getRange(index + 1, headersP.indexOf('estado') + 1).setValue('esperando'); // Vuelve a fase inicial
-      sheetP.getRange(index + 1, headersP.indexOf('ronda_actual') + 1).setValue(0);
-      sheetP.getRange(index + 1, headersP.indexOf('ganador') + 1).setValue('');
-      sheetP.getRange(index + 1, headersP.indexOf('dados_actuales') + 1).setValue('[]');
+      // Finalizar definitivamente esta sesión para expulsar a los jugadores al login
+      sheetP.getRange(index + 1, headersP.indexOf('estado') + 1).setValue('finalizada');
       
       CacheService.getScriptCache().remove("CUC_STATE_" + partidaId);
-      return { status: 'success', message: 'Partida reiniciada correctamente' };
+      return { status: 'success', message: 'Partida finalizada. Todos los jugadores han sido redirigidos al login.' };
 
     } else if (decision === 'ENTREGAR_PREMIO' || decision === 'ENVIAR_FONDO') {
       const gNombreIdx = headersP.indexOf('ganador');
@@ -552,7 +533,11 @@ function getPartidaActivaCucaracha() {
   
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
-  const activa = data.slice(1).reverse().find(r => r[4] !== 'finalizada');
+  // Ignoramos partidas finalizadas o canceladas
+  const activa = data.slice(1).reverse().find(r => {
+    const st = String(r[headers.indexOf('estado')]).toLowerCase();
+    return st !== 'finalizada' && st !== 'cancelada';
+  });
   
   if (!activa) return { status: 'none' };
   
@@ -648,6 +633,7 @@ function cancelarPartidaCucaracha(partidaId) {
       for (let i = 1; i < rows.length; i++) {
         if (String(rows[i][idIdx]) === String(partidaId)) {
           sheet.getRange(i + 1, estIdx + 1).setValue('CANCELADA');
+          CacheService.getScriptCache().remove("CUC_STATE_" + partidaId);
           return { status: "success", message: "Partida cancelada" };
         }
       }
@@ -758,8 +744,12 @@ function lanzarDadosCucarachaV2(partidaId) {
     sheetP.getRange(idxP + 1, headersP.indexOf('ronda_actual') + 1).setValue(rondaActual + 1);
     
     const colFase = headersP.indexOf('fase_actual');
+    const colTimestamp = headersP.indexOf('timestamp_actualizacion');
     if (colFase !== -1) {
       sheetP.getRange(idxP + 1, colFase + 1).setValue(CUCARACHA_CONFIG_V2.FASES.DECIDIENDO);
+    }
+    if (colTimestamp !== -1) {
+      sheetP.getRange(idxP + 1, colTimestamp + 1).setValue(new Date());
     }
     
     // Reiniciar decisiones de jugadores para esta ronda
@@ -773,6 +763,9 @@ function lanzarDadosCucarachaV2(partidaId) {
         }
       }
     }
+
+    // Limpiar caché para que todos vean la nueva fase y timestamp
+    CacheService.getScriptCache().remove("CUC_STATE_" + partidaId);
 
     return { status: 'success', dados: dados, fase: 'DECIDIENDO' };
   });

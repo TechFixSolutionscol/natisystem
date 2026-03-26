@@ -75,21 +75,42 @@ function handleUrlParams() {
     }
 }
 
-function startDecisionTimer() {
-    if (state.decisionTimer) return;
+function startDecisionTimer(forcedTime = 20) {
+    if (state.decisionTimer) {
+        // Si ya está corriendo pero el desfase es grande, reiniciamos el tiempo
+        if (Math.abs(state.decisionTimeLeft - forcedTime) > 2) {
+            state.decisionTimeLeft = forcedTime;
+        }
+        return;
+    }
 
-    state.decisionTimeLeft = 20;
-    const timerEl = document.getElementById('autoPassTimer');
-    if (timerEl) timerEl.innerText = `⏳ 20s`;
+    state.decisionTimeLeft = forcedTime;
+    const timerClock = document.getElementById('neonClock');
+
+    if (timerClock) {
+        const ss = state.decisionTimeLeft.toString().padStart(2, '0');
+        timerClock.textContent = `00:${ss}`;
+        timerClock.classList.remove('low-time');
+        if (state.decisionTimeLeft <= 5) timerClock.classList.add('low-time');
+    }
 
     // Iniciar intervalo
     state.decisionTimer = setInterval(() => {
         state.decisionTimeLeft--;
-        if (timerEl) timerEl.innerText = `⏳ ${state.decisionTimeLeft}s`;
+        const ss = state.decisionTimeLeft.toString().padStart(2, '0');
+        
+        if (timerClock) {
+            timerClock.textContent = `00:${ss}`;
+            if (state.decisionTimeLeft <= 5) {
+                timerClock.classList.add('low-time');
+            }
+        }
 
         if (state.decisionTimeLeft <= 0) {
             stopDecisionTimer();
-            if (timerEl) timerEl.innerText = "⏰ TIEMPO AGOTADO";
+            if (timerClock) {
+                timerClock.textContent = "00:00";
+            }
             submitDecisionV2('PASAR');
         }
     }, 1000);
@@ -100,8 +121,11 @@ function stopDecisionTimer() {
         clearInterval(state.decisionTimer);
         state.decisionTimer = null;
     }
-    const timerEl = document.getElementById('autoPassTimer');
-    if (timerEl) timerEl.innerText = "";
+    const timerClock = document.getElementById('neonClock');
+    if (timerClock) {
+        timerClock.textContent = "00:20";
+        timerClock.classList.remove('low-time');
+    }
 }
 
 async function detectActiveGame() {
@@ -356,20 +380,8 @@ function handleGameStateUpdate(res) {
 
 
 
-            // Habilitar/deshabilitar botones según disponibilidad y si ya se pasó
-            const btns = document.querySelectorAll('.btn-decision');
-            btns.forEach(b => {
-                const isPasar = b.textContent.includes('PASAR');
-                // Si ya decidió pasar, todo bloqueado
-                if (state.hasDecided) {
-                    b.disabled = true;
-                    b.style.opacity = '0.4';
-                } else {
-                    // Si no ha decidido, deshabilitar acciones si no hay dados, pero permitir PASAR siempre
-                    b.disabled = !canMarkAny && !isPasar;
-                    b.style.opacity = (!canMarkAny && !isPasar) ? '0.4' : '1';
-                }
-            });
+            // Actualizar botones de acción centrales
+            updateActionButtons(canMarkAny);
 
         } else {
             document.getElementById('decisionPanel').classList.add('hidden');
@@ -428,7 +440,9 @@ function handleGameStateUpdate(res) {
                         // Reset visual local
                         state.lastRondaNum = 0;
                         state.pendingMarks.clear();
+                        state.selectionZone = null; // Limpiar zona al reiniciar
                         updateCockroachVisuals({ piezas_marcadas: [] });
+                        updateActionButtons(); // Resetear botones
                         console.log("Reiniciado para nueva ronda.");
                     }, 1000);
                 }, 2000); // 2 segundos de mensaje de reinicio
@@ -722,20 +736,22 @@ async function submitDecisionV2(decision) {
 
     // MODO SELECTOR DE ZONA: PATA, CABEZA, COLA solo activan la zona visual
     if (decision === 'PATA' || decision === 'CABEZA' || decision === 'COLA') {
-        const oldZone = state.selectionZone;
-        // Toggle: si ya está seleccionada la misma zona, desactivar
-        if (state.selectionZone === decision) {
-            state.selectionZone = null;
-        } else {
-            state.selectionZone = decision;
+        // RESTRICCIÓN: Si ya hay una zona seleccionada, NO dejamos cambiar (bloqueo solicitado por usuario)
+        if (state.selectionZone && state.selectionZone !== decision) {
+            addChatMessage('SISTEMA', `🛑 Ya seleccionaste ${state.selectionZone}. Debes terminar tu turno o PASAR.`, true);
+            return;
         }
 
+        const oldZone = state.selectionZone;
+        
+        // Bloqueo total: Una vez seleccionado, no se puede deseleccionar (toggle off desactivado)
+        state.selectionZone = decision;
+
         playSound('mark');
-        addChatMessage('SISTEMA', state.selectionZone
-            ? `👉 Zona ${state.selectionZone} activada. Haz clic en la pieza que quieras marcar.`
-            : '🔄 Zona deseleccionada. Todas las piezas disponibles están habilitadas.', true);
+        addChatMessage('SISTEMA', `👉 Zona ${state.selectionZone} activa. Haz clic en las piezas para construir.`, true);
 
         updateCockroachVisuals(state.progreso);
+        updateActionButtons(); // Actualizar visual de botones
 
         // SI la zona cambió, informamos al servidor para que el administrador la vea
         if (state.selectionZone !== oldZone) {
@@ -850,6 +866,61 @@ function renderRanking(jugadores, totalPiezas) {
             <span class="score">${j.piezas_completadas}/${totalPiezas}</span>
         </div>
     `).join('');
+}
+
+/**
+ * Actualiza el estado visual de los botones de acción para reflejar los bloqueos
+ */
+function updateActionButtons(canMarkAny = true) {
+    const buttons = document.querySelectorAll('.btn-decision');
+    buttons.forEach(btn => {
+        const onclickText = btn.getAttribute('onclick') || "";
+        let action = "";
+        if (onclickText.includes("'PATA'")) action = 'PATA';
+        else if (onclickText.includes("'CABEZA'")) action = 'CABEZA';
+        else if (onclickText.includes("'COLA'")) action = 'COLA';
+        else if (onclickText.includes("'PASAR'")) action = 'PASAR';
+
+        if (!action) return;
+        const isPasar = action === 'PASAR';
+
+        // 1. Si ya decidió definitivamente (ej. pulsó PASAR o ganó), todo bloqueado
+        if (state.hasDecided) {
+            btn.disabled = true;
+            btn.style.opacity = '0.3';
+            btn.style.filter = 'grayscale(1)';
+            btn.classList.remove('selected-glow');
+            return;
+        }
+
+        // 2. Si hay una zona seleccionada, bloquear las demás (excepto PASAR)
+        if (state.selectionZone) {
+            if (action !== state.selectionZone && !isPasar) {
+                btn.disabled = true;
+                btn.style.opacity = '0.3';
+                btn.style.filter = 'grayscale(1)';
+                btn.style.cursor = 'not-allowed';
+                btn.classList.remove('selected-glow');
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.filter = 'none';
+                btn.style.cursor = 'pointer';
+                if (action === state.selectionZone) {
+                    btn.classList.add('selected-glow');
+                } else {
+                    btn.classList.remove('selected-glow');
+                }
+            }
+        } else {
+            // 3. Si no hay zona, habilitar según disponibilidad de dados (PASAR siempre disponible)
+            btn.disabled = !isPasar && !canMarkAny;
+            btn.style.opacity = (!isPasar && !canMarkAny) ? '0.3' : '1';
+            btn.style.filter = (!isPasar && !canMarkAny) ? 'grayscale(0.5)' : 'none';
+            btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
+            btn.classList.remove('selected-glow');
+        }
+    });
 }
 
 // --- UTILS ---

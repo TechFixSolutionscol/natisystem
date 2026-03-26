@@ -158,6 +158,11 @@
                 <!-- Inyección dinámica de dados 3D -->
             </div>
 
+            <!-- RELOJ DIGITAL NEÓN (Sincronizado) -->
+            <div id="adminTimerContainer" class="neon-timer-container hidden" style="justify-content:center; margin-bottom:20px;">
+                <div id="neonClock" class="neon-clock">00:20</div>
+            </div>
+
             <div class="admin-actions-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 <button id="btnRoll" class="btn-primary"
                     style="font-size:1.2rem; padding:20px; background:var(--gold) !important; color:#000 !important;"
@@ -202,9 +207,9 @@
                     🏦 ENVIAR AL FONDO NATILLERA
                 </button>
                 <div style="border-top: 1px dashed rgba(255,255,255,0.2); margin: 10px 0;"></div>
-                <button class="btn-primary" style="background:var(--gold) !important; color:black !important;"
+                <button class="btn-primary" style="background:#f59e0b !important; color:black !important; font-weight:800;"
                     onclick="enviarDecisionAdmin('REINICIAR_PARTIDA')">
-                    🔄 INICIAR NUEVA RONDA (RESET)
+                    🔄 FINALIZAR Y SOLICITAR NUEVO PAGO
                 </button>
             </div>
             <p class="text-muted mt-4" style="font-size: 0.7rem;">Esta acción es obligatoria para desbloquear la sala.
@@ -296,6 +301,66 @@
                 gameControl.classList.remove('hidden');
                 decisionModal.classList.add('hidden');
                 state.adminCelebrated = false; // Reset para próxima vez
+            }
+
+            // --- SINCRONICACIÓN DE TEMPORIZADOR ---
+            const currentPhase = (partida.fase_actual || '').toUpperCase();
+            if (currentPhase === 'DECIDIENDO') {
+                const serverNow = new Date().getTime();
+                const serverStart = new Date(partida.timestamp_actualizacion).getTime();
+                const elapsed = Math.floor((serverNow - serverStart) / 1000);
+                const timeLeft = Math.max(0, 20 - elapsed);
+                
+                if (timeLeft > 0) {
+                    startAdminTimer(timeLeft);
+                } else {
+                    stopAdminTimer();
+                }
+            } else {
+                stopAdminTimer();
+            }
+        }
+
+        function startAdminTimer(forcedTime) {
+            if (state.decisionTimer) {
+                if (Math.abs(state.decisionTimeLeft - forcedTime) > 2) {
+                    state.decisionTimeLeft = forcedTime;
+                }
+                return;
+            }
+
+            state.decisionTimeLeft = forcedTime;
+            const container = document.getElementById('adminTimerContainer');
+            const clock = document.getElementById('neonClock');
+
+            if (container) container.classList.remove('hidden');
+            
+            state.decisionTimer = setInterval(() => {
+                state.decisionTimeLeft--;
+                if (clock) {
+                    const ss = Math.max(0, state.decisionTimeLeft).toString().padStart(2, '0');
+                    clock.textContent = `00:${ss}`;
+                    if (state.decisionTimeLeft <= 5) clock.classList.add('low-time');
+                    else clock.classList.remove('low-time');
+                }
+
+                if (state.decisionTimeLeft <= 0) {
+                    stopAdminTimer();
+                }
+            }, 1000);
+        }
+
+        function stopAdminTimer() {
+            if (state.decisionTimer) {
+                clearInterval(state.decisionTimer);
+                state.decisionTimer = null;
+            }
+            const container = document.getElementById('adminTimerContainer');
+            const clock = document.getElementById('neonClock');
+            if (container) container.classList.add('hidden');
+            if (clock) {
+                clock.textContent = "00:20";
+                clock.classList.remove('low-time');
             }
         }
 

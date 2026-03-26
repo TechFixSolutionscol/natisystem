@@ -2,6 +2,7 @@
  * LA CUCARACHA PREMIUM - SISTEMA DE DISEÑO
  * Estilo: Dark Modern / Gold / Glassmorphism
  */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
 
 :root {
     --primary: #6366f1;
@@ -601,9 +602,74 @@ body.wood-theme {
 
 .decision-prompt {
     font-weight: 800;
-    font-size: 0.8rem;
-    margin-bottom: 15px;
+    font-size: 1rem;
+    margin-bottom: 20px;
     color: var(--text-main);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* RELOJ DIGITAL NEÓN (INTEGRADO EN PANEL) */
+.neon-timer-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 15px 0 25px 0;
+    width: 100%;
+}
+
+.neon-clock {
+    font-family: 'Orbitron', 'Share Tech Mono', monospace, system-ui;
+    font-size: 2.8rem; /* Tamaño optimizado para panel */
+    color: #00f2ff;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 10px 25px;
+    border-radius: 12px;
+    border: 3px solid #00f2ff;
+    box-shadow: 0 0 15px rgba(0, 242, 255, 0.3);
+    text-shadow: 0 0 10px #00f2ff, 0 0 15px #00f2ff;
+    letter-spacing: 4px;
+    line-height: 1;
+    min-width: 180px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+@media (max-width: 600px) {
+    .neon-clock {
+        font-size: 1.8rem;
+        padding: 8px 15px;
+        min-width: 120px;
+        letter-spacing: 2px;
+        border-width: 2px;
+    }
+}
+
+.neon-clock.low-time {
+    color: #ff3e3e;
+    border-color: #ff3e3e;
+    box-shadow: 0 0 20px rgba(255, 62, 62, 0.5);
+    text-shadow: 0 0 10px #ff3e3e;
+    animation: neonAlert 0.5s infinite alternate;
+}
+
+@keyframes neonAlert {
+    from { opacity: 0.7; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes neonPulse {
+    from { transform: scale(1); box-shadow: 0 0 20px rgba(0, 242, 255, 0.5); }
+    to { transform: scale(1.02); box-shadow: 0 0 35px rgba(0, 242, 255, 0.8); }
+}
+
+@media (max-width: 600px) {
+    .neon-clock {
+        font-size: 2.5rem;
+        padding: 10px 20px;
+        min-width: 180px;
+    }
 }
 
 .decision-buttons {

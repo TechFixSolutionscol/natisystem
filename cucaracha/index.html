@@ -77,7 +77,12 @@
             
             <!-- PANEL DE DECISIÓN V2 -->
             <div id="decisionPanel" class="decision-panel mt-4 hidden">
-                <p class="decision-prompt">¿QUÉ ACCIÓN DESEAS REALIZAR? <span id="autoPassTimer" style="color:var(--gold); font-weight:900; margin-left:10px;"></span></p>
+                <p class="decision-prompt">¿QUÉ ACCIÓN DESEAS REALIZAR?</p>
+                
+                <!-- RELOJ DIGITAL NEÓN (Original position) -->
+                <div class="neon-timer-container">
+                    <div id="neonClock" class="neon-clock">00:20</div>
+                </div>
                 <div class="decision-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <button class="btn-decision build" onclick="submitDecisionV2('PATA')">
                         <span class="icon">🐾</span> PATA (-1)
@@ -86,7 +91,7 @@
                         <span class="icon">🐲</span> CABEZA (-2)
                     </button>
                     <button class="btn-decision win" onclick="submitDecisionV2('COLA')">
-                        <span class="icon">🦎</span> COLA (-3)
+                        <span class="icon"></span> COLA (-3)
                     </button>
                     <button class="btn-decision pass" onclick="submitDecisionV2('PASAR')">
                         <span class="icon">⏭️</span> PASAR (0)
