@@ -182,33 +182,39 @@
 
     <!-- MODAL DECISIÓN ADMIN (OBLIGATORIO FIN DE RONDA) -->
     <div id="adminDecisionModal" class="overlay hidden">
-        <div class="glass-card text-center p-5 animate-zoom" style="max-width: 500px; border: 3px solid var(--gold); box-shadow: 0 0 50px var(--gold-glow);">
+        <div class="glass-card text-center p-5 animate-zoom"
+            style="max-width: 500px; border: 3px solid var(--gold); box-shadow: 0 0 50px var(--gold-glow);">
             <h1 class="premium-title glow-text">🏆 ¡RONDA FINALIZADA!</h1>
-            <p class="mb-4 text-white">Se ha detectado un ganador. Selecciona el destino de los premios para continuar:</p>
-            
+            <p class="mb-4 text-white">Se ha detectado un ganador. Selecciona el destino de los premios para continuar:
+            </p>
+
             <div id="winnerInfoAdmin" class="winner-display" style="padding: 15px; margin-bottom: 20px;">
                 <span id="adminWinnerName" class="winner-name" style="font-size: 1.5rem;">NOMBRE DEL GANADOR</span>
             </div>
 
             <div class="decision-stack" style="display: flex; flex-direction: column; gap: 15px;">
-                <button class="btn-primary" style="background:#22c55e !important;" onclick="enviarDecisionAdmin('ENTREGAR_PREMIO')">
+                <button class="btn-primary" style="background:#22c55e !important;"
+                    onclick="enviarDecisionAdmin('ENTREGAR_PREMIO')">
                     💰 ENTREGAR PREMIO (REGISTRAR)
                 </button>
-                <button class="btn-primary" style="background:var(--primary) !important;" onclick="enviarDecisionAdmin('ENVIAR_FONDO')">
+                <button class="btn-primary" style="background:var(--primary) !important;"
+                    onclick="enviarDecisionAdmin('ENVIAR_FONDO')">
                     🏦 ENVIAR AL FONDO NATILLERA
                 </button>
                 <div style="border-top: 1px dashed rgba(255,255,255,0.2); margin: 10px 0;"></div>
-                <button class="btn-primary" style="background:var(--gold) !important; color:black !important;" onclick="enviarDecisionAdmin('REINICIAR_PARTIDA')">
+                <button class="btn-primary" style="background:var(--gold) !important; color:black !important;"
+                    onclick="enviarDecisionAdmin('REINICIAR_PARTIDA')">
                     🔄 INICIAR NUEVA RONDA (RESET)
                 </button>
             </div>
-            <p class="text-muted mt-4" style="font-size: 0.7rem;">Esta acción es obligatoria para desbloquear la sala.</p>
+            <p class="text-muted mt-4" style="font-size: 0.7rem;">Esta acción es obligatoria para desbloquear la sala.
+            </p>
         </div>
     </div>
 
     <script>
         function getScriptUrl() {
-            try { return window.parent.API_URL; } catch(e) { return null; }
+            try { return window.parent.API_URL; } catch (e) { return null; }
         }
         const CONFIG = {
             SCRIPT_URL: getScriptUrl() || 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec',
@@ -279,7 +285,7 @@
                 // No ocultar gameControl pero mostrar MODAL prioritario
                 decisionModal.classList.remove('hidden');
                 document.getElementById('adminWinnerName').innerText = partida.ganador || 'GANADOR DESCONOCIDO';
-                
+
                 // Efecto confeti solo una vez
                 if (!state.adminCelebrated) {
                     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
@@ -295,7 +301,7 @@
 
         async function enviarDecisionAdmin(decision) {
             if (!confirm(`¿Estás seguro de elegir: ${decision}?`)) return;
-            
+
             const btn = event.target;
             const originalText = btn.innerText;
             btn.disabled = true;
@@ -305,10 +311,10 @@
                 const res = await fetch(CONFIG.SCRIPT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ 
-                        action: 'tomarDecisionAdminCucaracha', 
+                    body: JSON.stringify({
+                        action: 'tomarDecisionAdminCucaracha',
                         partidaId: state.partidaId,
-                        decision: decision 
+                        decision: decision
                     })
                 });
                 const data = await res.json();
@@ -322,14 +328,17 @@
                         link.click();
                         document.body.removeChild(link);
                     }
-                    
+
                     document.getElementById('adminDecisionModal').classList.add('hidden');
                     fetchActiveGame();
                 } else {
-                    alert("Error: " + data.message);
+                    alert("Error del Servidor: " + (data.message || "Desconocido"));
                 }
-            } catch (e) { console.error(e); }
-            
+            } catch (e) {
+                console.error(e);
+                alert("Error de Conexión: No se pudo contactar con el servidor.");
+            }
+
             btn.disabled = false;
             btn.innerText = originalText;
         }
@@ -338,13 +347,22 @@
             const nombre = document.getElementById('adminNombrePartida').value;
             const monto = document.getElementById('adminMonto').value;
 
-            const res = await fetch(CONFIG.SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({ action: 'crearPartidaCucaracha', nombre, monto, adminNombre: 'Admin' })
-            });
-            const data = await res.json();
-            if (data.status === 'success') fetchActiveGame();
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action: 'crearPartidaCucaracha', nombre, monto, adminNombre: 'Admin' })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchActiveGame();
+                } else {
+                    alert("Error al crear partida: " + (data.message || "Acción no reconocida o error interno"));
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error de red al intentar crear la partida.");
+            }
         }
 
         async function iniciarJuego() {
@@ -378,7 +396,7 @@
             const btn = document.getElementById('btnRoll');
             btn.disabled = true;
             btn.innerText = "🎲 LANZANDO...";
-            
+
             const grid = document.getElementById('diceGrid');
             grid.innerHTML = '';
             for (let i = 0; i < 10; i++) {
@@ -392,7 +410,7 @@
                 body: JSON.stringify({ action: 'lanzarDadosCucarachaV2', partidaId: state.partidaId })
             });
             const data = await res.json();
-            
+
             await new Promise(r => setTimeout(r, 1000));
 
             btn.disabled = false;
@@ -459,13 +477,13 @@
         }
 
         async function aprobarJugador(nombre, btnElement) {
-            // UI OPTIMISTA: Ocultar inmediatamente la tarjeta del jugador
             const card = btnElement.closest('.pending-card');
+            
+            // UI SEMI-OPTIMISTA: Deshabilitar pero no ocultar del todo hasta confirmar éxito
             if (card) {
-                card.style.opacity = '0.3';
-                card.style.pointerEvents = 'none';
-                // Opcional: ocultarla del todo tras un breve lag visual
-                setTimeout(() => card.classList.add('hidden'), 300);
+                card.style.opacity = '0.5';
+                btnElement.disabled = true;
+                btnElement.innerText = "⌛...";
             }
 
             try {
@@ -475,16 +493,35 @@
                     body: JSON.stringify({ action: 'aprobarJugadorCucaracha', partidaId: state.partidaId, nombre })
                 });
                 const data = await res.json();
-                if (data.status !== 'success') {
+                
+                if (data.status === 'success') {
+                    // Ahora sí lo ocultamos con animación
+                    if (card) {
+                        card.style.transition = 'all 0.5s ease';
+                        card.style.transform = 'translateX(100px)';
+                        card.style.opacity = '0';
+                        setTimeout(() => card.remove(), 500);
+                    }
+                } else {
                     alert("Error al aprobar: " + data.message);
-                    if (card) card.classList.remove('hidden'); // Restaurar si falló
+                    // Restaurar UI
+                    if (card) {
+                        card.style.opacity = '1';
+                        btnElement.disabled = false;
+                        btnElement.innerText = "APROBAR";
+                    }
                 }
-            } catch (e) { 
-                console.error(e); 
-                if (card) card.classList.remove('hidden');
+            } catch (e) {
+                console.error(e);
+                alert("Error de conexión al aprobar jugador.");
+                if (card) {
+                    card.style.opacity = '1';
+                    btnElement.disabled = false;
+                    btnElement.innerText = "APROBAR";
+                }
             }
-            
-            // Refrescar para ver al jugador en la pista
+
+            // Refrescar para ver al jugador en la pista (siempre lo hacemos para sincronizar)
             fetchDetails();
         }
 
@@ -507,7 +544,7 @@
                             <span style="font-size:0.8rem; color:var(--gold); opacity:0.8;">ID/Cédula: ${j.socio_id || 'N/A'}</span>
                         </div>
                     </div>
-                    <button class="btn-primary" style="padding:8px 15px; font-size:0.8rem;" onclick="aprobarJugador('${j.nombre}', this)">APROBAR</button>
+                    <button class="btn-primary" style="padding:8px 15px; font-size:0.8rem;" onclick="aprobarJugador('${j.nombre.replace(/'/g, "\\'")}', this)">APROBAR</button>
                 </div>
             `).join('') || '<p class="text-muted text-center p-4">No hay jugadores pendientes</p>';
 

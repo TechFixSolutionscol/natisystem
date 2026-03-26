@@ -444,6 +444,10 @@ function doPost(e) {
       case 'procesarRondaMasiva':
         result = procesarRondaMasiva(data.partidaId);
         break;
+
+      case 'setupCucarachaV2':
+        result = setupCucarachaV2();
+        break;
         
       case 'getLiveKitToken':
         result = { 
@@ -3480,6 +3484,7 @@ function repararMorasMasivas() {
  * ⚠️ REEMPLAZAR CON EL ID DE LA CARPETA "SOPORTES_PAGOS" o similar
  */
 const FOLDER_ID_COMPROBANTES = "1CyTWEAEt2IxKVGMHX-fuo83axPF6VVWp"; 
+const FOLDER_ID_RECIBOS_CUCARACHA = "1XCEDWpqzksCZXb6onljjEH5ZwY_4Rh7k";
 
 /**
  * Registra un aporte desde la vista externa (Consulta)

@@ -41,8 +41,8 @@ window.onload = async () => {
 
 function handleUrlParams() {
     const params = new URLSearchParams(window.location.search);
-    const urlName = params.get('nombre');
-    const urlCedula = params.get('cedula');
+    const urlName = params.get('nombre') || params.get('name');
+    const urlCedula = params.get('cedula') || params.get('id');
 
     // Intentar obtener de sessionStorage (Bingo compatibility)
     const sessionName = sessionStorage.getItem('natillera_name');
@@ -58,15 +58,16 @@ function handleUrlParams() {
         const input = document.getElementById('playerName');
         if (input) {
             input.value = finalName;
-            input.classList.add('hidden'); // Ocultar si ya lo sabemos
+            // No ocultamos el input aún, dejamos que el usuario vea su sesión lista
         }
 
         const infoText = document.querySelector('#loginForm p.text-muted');
         if (infoText) {
-            infoText.innerHTML = `Hola <strong style="color:var(--gold); font-size:1.2rem;">${finalName}</strong>,<br>tu sesión está lista. Solo falta tu recibo:`;
+            infoText.innerHTML = `Hola <strong style="color:var(--gold); font-size:1.2rem;">${finalName}</strong>,<br>tu sesión de Socio está lista. <br>Solo falta adjuntar tu recibo para entrar:`;
         }
-
-        preLogin(finalName);
+        
+        // NO llamamos a preLogin(finalName) aquí automáticamente. 
+        // Dejamos que el flujo de syncState detecte si ya existe o que el usuario se registre.
     }
 
     if (finalCedula) {
@@ -123,7 +124,7 @@ async function detectActiveGame() {
 
 function checkSession() {
     const params = new URLSearchParams(window.location.search);
-    const urlName = params.get('nombre');
+    const urlName = params.get('nombre') || params.get('name');
 
     const savedName = urlName || localStorage.getItem('cucaracha_player_name');
     const savedPartidaId = localStorage.getItem('cucaracha_partida_id');
@@ -134,11 +135,8 @@ function checkSession() {
         // PERSISTENCIA: Si viene de URL, lo guardamos para futuras recargas
         if (urlName) localStorage.setItem('cucaracha_player_name', urlName);
 
-        // Si el ID de partida guardado coincide, o si es un login fresco de URL, procedemos
-        if (String(savedPartidaId) === String(state.partidaId) || urlName) {
-            preLogin(savedName);
-            // quitamos startPolling() de aquí para que no se duplique con el de detectActiveGame
-        }
+        // NO llamamos a preLogin automáticamente para permitir registro de nuevos socios
+        // El syncState se encargará de detectar si ya es un jugador aprobado
     }
 }
 
@@ -147,17 +145,13 @@ function preLogin(name) {
     document.getElementById('loginForm').classList.add('hidden');
     document.getElementById('loadingSection').classList.remove('hidden');
 
-    // FALLBACK DE SEGURIDAD (15 segundos - Google Script puede ser lento)
+    // El timeout ahora es de 10s y simplemente libera el formulario si algo falla
     setTimeout(() => {
-        const loading = document.getElementById('loadingSection');
-        if (loading && !loading.classList.contains('hidden')) {
-            if (state.status !== 'playing' && state.status !== 'waiting') {
-                console.warn("Tiempo de espera agotado para sesión. Mostrando formulario.");
-                loading.classList.add('hidden');
-                document.getElementById('loginForm').classList.remove('hidden');
-            }
+        if (state.status === 'login') {
+            document.getElementById('loadingSection').classList.add('hidden');
+            document.getElementById('loginForm').classList.remove('hidden');
         }
-    }, 15000);
+    }, 10000);
 }
 
 function showWaitingScreen() {
@@ -167,6 +161,13 @@ function showWaitingScreen() {
 
     // Asegurar que el overlay general sea visible
     document.getElementById('loginOverlay').classList.remove('hidden');
+}
+
+function showLoginOverlay() {
+    document.getElementById('loginOverlay').classList.remove('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('loadingSection').classList.add('hidden');
+    document.getElementById('waitingSection').classList.add('hidden');
 }
 
 // --- REGISTRO Y LOGIN ---
@@ -284,21 +285,25 @@ function handleGameStateUpdate(res) {
     });
 
     if (!myData) {
-        console.warn(`Jugador "${state.playerName}" (normalizado: ${normalizeNameV2(state.playerName)}) no encontrado en la lista de ${jugadores.length} jugadores.`);
-        console.log("Lista de jugadores normalizados:", jugadores.map(j => normalizeNameV2(j.nombre)));
-
-        // SI LA PARTIDA YA FINALIZÓ, dejamos que la lógica de victoria inferior se encargue
+        // MEJORA: No redirigir inmediatamente si estamos en fase de espera o si el estado local es 'waiting'
+        // Esto previene que un lag en el servidor expulse al jugador justo después de registrarse.
+        console.warn(`Jugador "${state.playerName}" no encontrado en la lista de ${jugadores.length} jugadores.`);
+        
+        // Si la partida ya finalizó, o si llevamos mucho tiempo sin encontrar al jugador, redirigimos
         if (partida.estado && partida.estado.toLowerCase() === 'finalizada') {
             console.log("Sesión terminada por fin de partida.");
-        } else {
-            console.warn("Jugador no encontrado. Redirigiendo a login...");
+        } else if (state.status === 'playing') { 
+            // Si ya estábamos jugando y desaparecimos, es un error fatal o expulsión
+            console.warn("Jugador desapareció de la lista activa. Redirigiendo a login...");
             state.status = 'login';
-            document.getElementById('loginOverlay').classList.remove('hidden');
-            document.getElementById('loginForm').classList.remove('hidden');
-            document.getElementById('loadingSection').classList.add('hidden');
-            document.getElementById('waitingSection').classList.add('hidden'); // CRÍTICO: Ocultar espera si no existe el jugador
-            return;
+            showLoginOverlay();
+        } else {
+            // Si estábamos en 'waiting' o 'login', simplemente permanecemos en espera un poco más
+            console.log("Jugador aún no aprobado o en registro. Manteniendo espera...");
+            state.status = 'waiting';
+            showWaitingScreen();
         }
+        return;
     }
 
     console.log("Jugador encontrado! Estado:", myData.estado);
@@ -657,7 +662,7 @@ function updateCockroachVisuals(progreso) {
 
             // Verificar si esta pieza pertenece a la zona seleccionada
             const tipo = node.getAttribute('data-tipo');
-            const inZone = !state.selectionZone || state.selectionZone === tipo;
+            const inZone = state.selectionZone === tipo; // RESTRICCIÓN: Solo si la zona coincide exactamente
 
             if (inZone && diceAvailable) {
                 node.classList.add('can-mark');
@@ -741,9 +746,27 @@ async function submitDecisionV2(decision) {
 
 
     // CONSTRUIR_X: Marcado específico de pieza (clic directo en el tablero)
+    let added = false; // Inicializar variable de control
+
     if (decision.startsWith('CONSTRUIR_')) {
         const idx = parseInt(decision.split('_')[1]);
         if (state.pendingMarks.has(idx)) return; // Ya pendiente
+
+        // RESTRICCIÓN: Debe haber una zona seleccionada
+        if (!state.selectionZone) {
+            addChatMessage('SISTEMA', '⚠️ Primero selecciona la zona (PATA, CABEZA o COLA) que quieres construir.', true);
+            return;
+        }
+
+        // RESTRICCIÓN: La pieza debe coincidir con la zona seleccionada
+        let tipoPieza = 'PATA';
+        if (idx >= 24 && idx < 32) tipoPieza = 'CABEZA';
+        if (idx >= 32) tipoPieza = 'COLA';
+
+        if (tipoPieza !== state.selectionZone) {
+            addChatMessage('SISTEMA', `🛑 Esa pieza no pertenece a la zona ${state.selectionZone} que seleccionaste.`, true);
+            return;
+        }
 
         // Determinar qué dado necesita esta pieza
         let valRequired = 1;

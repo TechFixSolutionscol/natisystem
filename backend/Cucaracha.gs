@@ -234,33 +234,64 @@ function registrarJugadorCucaracha(partidaId, nombre, fotoBase64, socio_id) {
  */
 function aprobarJugadorCucaracha(partidaId, nombre) {
   return executeWithLock(() => {
+    Logger.log(`[APROBACIÓN] Iniciando para Partida: ${partidaId}, Jugador: ${nombre}`);
+    
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheetPartidas = ss.getSheetByName(HOJAS.CUCARACHA_PARTIDAS);
     const sheetJugadores = ss.getSheetByName(HOJAS.CUCARACHA_JUGADORES);
     
+    if (!sheetPartidas || !sheetJugadores) {
+      return { status: 'error', message: 'Hojas de Cucaracha no encontradas' };
+    }
+
     const dataPartidas = sheetPartidas.getDataRange().getValues();
     const headersPartidas = dataPartidas[0];
-    const indexPartida = dataPartidas.findIndex(r => r[0] === partidaId);
+    const indexPartida = dataPartidas.findIndex(r => String(r[0]) === String(partidaId));
     
-    if (indexPartida === -1) return { status: 'error', message: 'Partida no encontrada' };
+    if (indexPartida === -1) {
+      Logger.log(`[APROBACIÓN] Error: Partida ${partidaId} no encontrada.`);
+      return { status: 'error', message: 'Partida no encontrada' };
+    }
     
     const idxMonto = headersPartidas.indexOf('monto');
     const idxPozo = headersPartidas.indexOf('pozo_total');
-    const montoApuesta = Number(dataPartidas[indexPartida][idxMonto]);
+    const montoApuesta = Number(dataPartidas[indexPartida][idxMonto]) || 0;
     
-    // Buscar y actualizar jugador
-    const dataJug = sheetJugadores.getDataRange().getValues();
-    const headersJug = dataJug[0];
-    const indexJug = dataJug.findIndex(r => r[0] === partidaId && r[1] === nombre);
+    // Buscar el jugador específico
+    const dataJugadores = sheetJugadores.getDataRange().getValues();
+    const headersJ = dataJugadores[0];
+    const nameNormal = normalizeNameV2(nombre);
     
-    if (indexJug === -1) return { status: 'error', message: 'Jugador no encontrado' };
+    // Encontrar la fila del jugador (última registrada para este nombre y partida)
+    let rowIndex = -1;
+    for (let i = dataJugadores.length - 1; i >= 1; i--) {
+      if (String(dataJugadores[i][0]) === String(partidaId) && normalizeNameV2(dataJugadores[i][1]) === nameNormal) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
     
-    sheetJugadores.getRange(indexJug + 1, headersJug.indexOf('estado') + 1).setValue('aprobado');
-    sheetJugadores.getRange(indexJug + 1, headersJug.indexOf('timestamp_aprobacion') + 1).setValue(new Date());
+    if (rowIndex === -1) {
+      Logger.log(`[APROBACIÓN] Error: Jugador ${nombre} (${nameNormal}) no encontrado en Partida ${partidaId}.`);
+      return { status: 'error', message: 'Jugador no encontrado en los registros de esta partida' };
+    }
+    
+    const colEstado = headersJ.indexOf('estado');
+    const estadoActual = dataJugadores[rowIndex-1][colEstado];
+
+    if (estadoActual === 'aprobado') {
+      Logger.log(`[APROBACIÓN] Aviso: El jugador ${nombre} ya estaba aprobado.`);
+      return { status: 'success', message: 'El jugador ya estaba aprobado', yaAprobado: true };
+    }
+
+    sheetJugadores.getRange(rowIndex, colEstado + 1).setValue('aprobado');
+    sheetJugadores.getRange(rowIndex, headersJ.indexOf('timestamp_aprobacion') + 1).setValue(new Date());
     
     // Actualizar pozo
     const pozoActual = Number(dataPartidas[indexPartida][idxPozo]) || 0;
     sheetPartidas.getRange(indexPartida + 1, idxPozo + 1).setValue(pozoActual + montoApuesta);
+
+    Logger.log(`[APROBACIÓN] Éxito: ${nombre} aprobado. Pozo actualizado: ${pozoActual + montoApuesta}`);
 
     // Limpiar caché para que el admin vea la aprobación de inmediato
     CacheService.getScriptCache().remove("CUC_STATE_" + partidaId);
@@ -363,7 +394,7 @@ function tomarDecisionAdminCucaracha(partidaId, decision) {
     const sheetP = ss.getSheetByName(HOJAS.CUCARACHA_PARTIDAS);
     const dataP = sheetP.getDataRange().getValues();
     const headersP = dataP[0];
-    const index = dataP.findIndex(r => r[0] === partidaId);
+    const index = dataP.findIndex(r => String(r[0]) === String(partidaId));
     
     if (index === -1) throw new Error("Partida no encontrada");
 
@@ -453,7 +484,7 @@ function getEstadoPartidaCucaracha(partidaId) {
     const sheetP = ss.getSheetByName(HOJAS.CUCARACHA_PARTIDAS);
     const dataP = sheetP.getDataRange().getValues();
     const headersP = dataP[0];
-    const partida = dataP.find(r => r[0] === partidaId);
+    const partida = dataP.find(r => String(r[0]) === String(partidaId));
     
     if (!partida) return { status: 'error', message: 'Partida no encontrada' };
     
@@ -547,7 +578,11 @@ function subirFotoReciboCucaracha(base64Data, nombreArchivo) {
   const lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
-    const folderId = FOLDER_ID_RECIBOS_CUCARACHA;
+    const folderId = typeof FOLDER_ID_RECIBOS_CUCARACHA !== 'undefined' ? FOLDER_ID_RECIBOS_CUCARACHA : null;
+    if (!folderId || folderId === "1XCEDWpqzksCZXb6onljjEH5ZwY_4Rh7k") {
+      return { ok: false, error: "ID de carpeta de Drive no configurado" };
+    }
+    
     const folder = DriveApp.getFolderById(folderId);
     const blob = Utilities.newBlob(
       Utilities.base64Decode(base64Data.split(',')[1] || base64Data),
@@ -561,6 +596,7 @@ function subirFotoReciboCucaracha(base64Data, nombreArchivo) {
     const directUrl = "https://drive.google.com/uc?export=view&id=" + file.getId();
     return { ok: true, url: directUrl };
   } catch (e) {
+    console.error("Error en subirFotoReciboCucaracha:", e.message);
     return { ok: false, error: e.message };
   } finally {
     lock.releaseLock();
