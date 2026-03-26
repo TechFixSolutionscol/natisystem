@@ -32,7 +32,9 @@ const HOJAS = {
   BINGO_JUEGOS: "Bingo_Juegos",
   BINGO_TABLAS: "Bingo_Tablas",
   BINGO_BALOTAS: "Bingo_Balotas",
-  BINGO_CHAT: "Bingo_Chat"
+  BINGO_CHAT: "Bingo_Chat",
+  CUCARACHA_PARTIDAS: "Cucaracha_Partidas",
+  CUCARACHA_JUGADORES: "Cucaracha_Jugadores"
 };
 
 // ==========================================
@@ -167,6 +169,22 @@ function doGet(e) {
 
       case 'getTablasBingo':
         result = getTablasBingo(e.parameter.juego_id);
+        break;
+
+      case 'getPartidasCucaracha':
+        result = getData(HOJAS.CUCARACHA_PARTIDAS);
+        break;
+        
+      case 'getPendientesCucaracha':
+        result = getPendientesCucaracha(e.parameter.partidaId);
+        break;
+        
+      case 'getEstadoPartidaCucaracha':
+        result = getEstadoPartidaCucaracha(e.parameter.partidaId);
+        break;
+        
+      case 'getPartidaActivaCucaracha':
+        result = getPartidaActivaCucaracha();
         break;
         
       default:
@@ -394,6 +412,39 @@ function doPost(e) {
         result = cancelarJuegoBingo(data);
         break;
 
+      // JUEGO LA CUCARACHA (Migrado)
+      case 'crearPartidaCucaracha':
+        result = crearPartidaCucaracha(data.nombre, data.monto, data.adminNombre);
+        break;
+
+      case 'registrarJugadorCucaracha':
+        result = registrarJugadorCucaracha(data.partidaId, data.nombre, data.fotoBase64, data.cedula || data.socio_id);
+        break;
+
+      case 'aprobarJugadorCucaracha':
+        result = aprobarJugadorCucaracha(data.partidaId, data.nombre);
+        break;
+
+      case 'iniciarPartidaCucaracha':
+        result = iniciarPartidaCucaracha(data.partidaId);
+        break;
+
+      case 'tomarDecisionAdminCucaracha':
+        result = tomarDecisionAdminCucaracha(data.partidaId, data.decision);
+        break;
+
+      case 'lanzarDadosCucarachaV2':
+        result = lanzarDadosCucarachaV2(data.partidaId);
+        break;
+
+      case 'enviarDecisionCucaracha':
+        result = enviarDecisionCucaracha(data.partidaId, data.nombre, data.decision);
+        break;
+
+      case 'procesarRondaMasiva':
+        result = procesarRondaMasiva(data.partidaId);
+        break;
+        
       case 'getLiveKitToken':
         result = { 
           status: 'error', 
@@ -520,6 +571,82 @@ function validateRequiredFields(data, requiredFields) {
 function formatCurrency(amount) {
   if (amount === undefined || amount === null) return "$0";
   return "$" + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+/**
+ * Generador de Recibo PDF Profesional para Cucaracha
+ */
+function generarReciboCucarachaPDF(partidaId, partidaNombre, ganadorNombre, monto) {
+  try {
+    const formatMoney = (amount) => '$' + Number(amount || 0).toLocaleString('es-CO');
+    const fechaGeneracion = new Date().toLocaleString('es-CO');
+    
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Helvetica', sans-serif; color: #0f172a; padding: 40px; background-color: #f8fafc; }
+            .container { max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; background: white; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #065f46 0%, #10b981 100%); color: white; padding: 30px; text-align: center; border-radius: 16px 16px 0 0; }
+            .logo { font-size: 24px; font-weight: 800; letter-spacing: 2px; }
+            .content { padding: 40px; }
+            .prize-card { text-align: center; background: #ecfdf5; border: 2px solid #10b981; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
+            .prize-amount { font-size: 36px; font-weight: 900; color: #047857; }
+            .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+            .label { color: #64748b; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+            .value { color: #1e293b; font-weight: 700; }
+            .footer { padding: 20px; text-align: center; color: #94a3b8; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">LA CUCARACHA</div>
+              <p>Comprobante de Premio</p>
+            </div>
+            <div class="content">
+              <div class="prize-card">
+                <div class="prize-amount">${formatMoney(monto)}</div>
+              </div>
+              <div class="detail-row">
+                <span class="label">Ganador</span>
+                <span class="value">${ganadorNombre}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Partida</span>
+                <span class="value">${partidaNombre}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">ID de Sesión</span>
+                <span class="value">#${partidaId}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Fecha</span>
+                <span class="value">${fechaGeneracion}</span>
+              </div>
+            </div>
+            <div class="footer">
+              <p>Natillera System • Comprobante Digital • Emitido por Sistema</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const blob = Utilities.newBlob('', 'text/html', 'recibo.html').setDataFromString(htmlTemplate, "UTF-8");
+    const pdfBlob = blob.getAs("application/pdf");
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+    
+    return {
+      base64: base64,
+      filename: `Recibo_Cucaracha_${partidaId}_${ganadorNombre.replace(/\s+/g, '_')}.pdf`
+    };
+  } catch (e) {
+    Logger.log("Error en generarReciboCucarachaPDF: " + e.toString());
+    return null;
+  }
 }
 
 // Variable global para controlar la reentrada del bloqueo en la misma ejecución

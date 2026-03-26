@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Cucaracha - Nati System</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="cucaracha.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body class="wood-theme">
+    <div id="loginOverlay" class="overlay">
+        <div id="loginForm" class="glass-card login-box text-center">
+            <h2 class="premium-title">ENTRAR AL JUEGO</h2>
+            <p class="text-muted mb-4">Ingresa tus datos para participar en la carrera.</p>
+            
+            <div class="form-group mb-4">
+                <input type="text" id="playerName" class="input-premium" placeholder="Tu Nombre Completo" style="width:100%;">
+            </div>
+
+            <div class="upload-area mb-4" onclick="document.getElementById('receiptFile').click()">
+                <div id="uploadPlaceholder">
+                    <span style="font-size: 2rem;">📸</span>
+                    <p>Subir Foto del Recibo/Pago</p>
+                </div>
+                <div id="previewContainer" class="hidden"></div>
+                <input type="file" id="receiptFile" class="hidden" accept="image/*" onchange="previewReceipt(event)">
+            </div>
+
+            <button id="btnEnter" class="btn-primary w-full" onclick="registerPlayer()">
+                <span id="btnText">REGISTRARSE Y ENTRAR</span>
+                <span id="btnLoader" class="hidden">⌛ PROCESANDO...</span>
+            </button>
+        </div>
+
+        <div id="loadingSection" class="glass-card text-center p-5 hidden">
+            <div class="loader-ring mb-4"></div>
+            <h2 class="premium-title">CARGANDO SESIÓN</h2>
+            <p>Estamos recuperando tu lugar en la carrera...</p>
+        </div>
+
+        <div id="waitingSection" class="glass-card text-center p-5 hidden">
+            <div class="loader-ring mb-4"></div>
+            <h2 class="premium-title">ESPERANDO APROBACIÓN</h2>
+            <p>Tu registro ha sido enviado. El administrador te dará acceso en breve...</p>
+            <div class="badge-gold mt-4">ESTADO: PENDIENTE</div>
+        </div>
+    </div>
+
+    <!-- MAIN GAME DISPLAY -->
+    <header class="game-hud-top glass-card">
+        <div class="stat-badge">
+            <span class="label">POZO TOTAL</span>
+            <span id="potTotal" class="val">$0</span>
+        </div>
+        <div class="stat-badge">
+            <span class="label">TU PREMIO (50%)</span>
+            <span id="yourPrize" class="val">$0</span>
+        </div>
+        <div class="stat-badge phase-badge" id="phaseContainer">
+            <span class="label" id="phaseLabel">FASE</span>
+            <span id="gameStatus" class="val text-warning">ESPERANDO...</span>
+            <div id="roundTimer" class="timer-bar hidden"></div>
+        </div>
+    </header>
+
+    <main class="game-container">
+        <!-- ÁREA DE DADOS -->
+        <div class="dice-area glass-card">
+            <div class="priority-indicator" id="priorityIndicator">
+                TU PRIORIDAD: <span id="myPriorityVal">-</span>
+            </div>
+            <div id="diceGrid" class="dice-grid">
+                <!-- Los 10 dados 3D se inyectan dinámicamente -->
+            </div>
+            
+            <!-- PANEL DE DECISIÓN V2 -->
+            <div id="decisionPanel" class="decision-panel mt-4 hidden">
+                <p class="decision-prompt">¿QUÉ ACCIÓN DESEAS REALIZAR? <span id="autoPassTimer" style="color:var(--gold); font-weight:900; margin-left:10px;"></span></p>
+                <div class="decision-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button class="btn-decision build" onclick="submitDecisionV2('PATA')">
+                        <span class="icon">🐾</span> PATA (-1)
+                    </button>
+                    <button class="btn-decision save" onclick="submitDecisionV2('CABEZA')">
+                        <span class="icon">🐲</span> CABEZA (-2)
+                    </button>
+                    <button class="btn-decision win" onclick="submitDecisionV2('COLA')">
+                        <span class="icon">🦎</span> COLA (-3)
+                    </button>
+                    <button class="btn-decision pass" onclick="submitDecisionV2('PASAR')">
+                        <span class="icon">⏭️</span> PASAR (0)
+                    </button>
+                </div>
+                <p class="text-muted text-center mt-2" style="font-size:0.7rem;">(Gasta dados de valor '1' del pozo común)</p>
+            </div>
+
+            <div id="rollResultArea" class="roll-info text-center mt-3">
+                <p id="rollStatusLabel" class="text-muted" style="font-size:0.8rem;">Esperando lanzamiento del Administrador...</p>
+            </div>
+        </div>
+
+        <!-- TABLERO CUCARACHA (MADERA) -->
+        <div class="board-area">
+            <div class="cucaracha-wrapper wood-table">
+                <!-- SVG e Info de Progreso permanecen igual -->
+                <svg id="cucaracha-svg" viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <radialGradient id="bodyGrad" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" style="stop-color:#e67e22; stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#a04000; stop-opacity:1" />
+                        </radialGradient>
+                    </defs>
+
+                    <!-- CUERPO Y CABEZA (Base visual) -->
+                    <g id="visual-cockroach">
+                        <!-- Patas Realistas -->
+                        <g stroke="#3d2b1f" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.8">
+                            <!-- Superior -->
+                            <path d="M140 220 L100 180 L40 160" /><path d="M260 220 L300 180 L360 160" />
+                            <!-- Medio -->
+                            <path d="M130 320 L70 320 L20 340" /><path d="M270 320 L330 320 L380 340" />
+                            <!-- Inferior -->
+                            <path d="M140 450 L90 520 L40 540" /><path d="M260 450 L310 520 L360 540" />
+                        </g>
+
+                        <!-- Cuerpo Principal -->
+                        <path d="M200 150 Q280 150 280 320 Q280 500 200 550 Q120 500 120 320 Q120 150 200 150" 
+                              fill="url(#bodyGrad)" stroke="#4a2700" stroke-width="3"/>
+                        
+                        <!-- Cabeza -->
+                        <circle cx="200" cy="140" r="45" fill="#f39c12" stroke="#4a2700" stroke-width="2"/>
+                        
+                        <!-- Antenas Realistas -->
+                        <path d="M180 105 Q140 40 80 20" stroke="#3d2b1f" stroke-width="5" fill="none" />
+                        <path d="M220 105 Q260 40 320 20" stroke="#3d2b1f" stroke-width="5" fill="none" />
+
+                        <!-- OJOS Y CARA (Detalles restaurados) -->
+                        <ellipse cx="180" cy="130" rx="12" ry="15" fill="white" stroke="#000" />
+                        <circle cx="182" cy="132" r="4" fill="black" />
+                        <ellipse cx="220" cy="130" rx="12" ry="15" fill="white" stroke="#000" />
+                        <circle cx="218" cy="132" r="4" fill="black" />
+                        <path d="M185 160 Q200 172 215 160" stroke="#4a2700" stroke-width="2" fill="none" />
+                    </g>
+
+                    <!-- NODOS INTERACTIVOS (36 TOTAL) -->
+                    <g id="nodes-container">
+                        <!-- Patas (24) -->
+                        <g class="node" id="node-0"><circle cx="120" cy="210" r="14"/><text x="120" y="210">1</text></g>
+                        <g class="node" id="node-1"><circle cx="95" cy="190" r="14"/><text x="95" y="190">1</text></g>
+                        <g class="node" id="node-2"><circle cx="70" cy="175" r="14"/><text x="70" y="175">1</text></g>
+                        <g class="node" id="node-3"><circle cx="45" cy="165" r="14"/><text x="45" y="165">1</text></g>
+
+                        <g class="node" id="node-4"><circle cx="280" cy="210" r="14"/><text x="280" y="210">1</text></g>
+                        <g class="node" id="node-5"><circle cx="305" cy="190" r="14"/><text x="305" y="190">1</text></g>
+                        <g class="node" id="node-6"><circle cx="330" cy="175" r="14"/><text x="330" y="175">1</text></g>
+                        <g class="node" id="node-7"><circle cx="355" cy="165" r="14"/><text x="355" y="165">1</text></g>
+
+                        <g class="node" id="node-8"><circle cx="110" cy="320" r="14"/><text x="110" y="320">1</text></g>
+                        <g class="node" id="node-9"><circle cx="85" cy="320" r="14"/><text x="85" y="320">1</text></g>
+                        <g class="node" id="node-10"><circle cx="60" cy="325" r="14"/><text x="60" y="325">1</text></g>
+                        <g class="node" id="node-11"><circle cx="35" cy="335" r="14"/><text x="35" y="335">1</text></g>
+
+                        <g class="node" id="node-12"><circle cx="290" cy="320" r="14"/><text x="290" y="320">1</text></g>
+                        <g class="node" id="node-13"><circle cx="315" cy="320" r="14"/><text x="315" y="320">1</text></g>
+                        <g class="node" id="node-14"><circle cx="340" cy="325" r="14"/><text x="340" y="325">1</text></g>
+                        <g class="node" id="node-15"><circle cx="365" cy="335" r="14"/><text x="365" y="335">1</text></g>
+
+                        <g class="node" id="node-16"><circle cx="130" cy="430" r="14"/><text x="130" y="430">1</text></g>
+                        <g class="node" id="node-17"><circle cx="110" cy="470" r="14"/><text x="110" y="470">1</text></g>
+                        <g class="node" id="node-18"><circle cx="85" cy="510" r="14"/><text x="85" y="510">1</text></g>
+                        <g class="node" id="node-19"><circle cx="60" cy="530" r="14"/><text x="60" y="530">1</text></g>
+
+                        <g class="node" id="node-20"><circle cx="270" cy="430" r="14"/><text x="270" y="430">1</text></g>
+                        <g class="node" id="node-21"><circle cx="290" cy="470" r="14"/><text x="290" y="470">1</text></g>
+                        <g class="node" id="node-22"><circle cx="315" cy="510" r="14"/><text x="315" y="510">1</text></g>
+                        <g class="node" id="node-23"><circle cx="340" cy="530" r="14"/><text x="340" y="530">1</text></g>
+
+                        <!-- Cabeza/Antenas/Ojos (8) -->
+                        <g class="node" id="node-24"><circle cx="150" cy="80" r="13"/><text x="150" y="80">2</text></g>
+                        <g class="node" id="node-25"><circle cx="120" cy="50" r="13"/><text x="120" y="50">2</text></g>
+                        <g class="node" id="node-26"><circle cx="250" cy="80" r="13"/><text x="250" y="80">2</text></g>
+                        <g class="node" id="node-27"><circle cx="280" cy="50" r="13"/><text x="280" y="50">2</text></g>
+                        <!-- Nodos sobre los ojos -->
+                        <g class="node" id="node-28"><circle cx="180" cy="130" r="12"/><text x="180" y="130">2</text></g>
+                        <g class="node" id="node-29"><circle cx="220" cy="130" r="12"/><text x="220" y="130">2</text></g>
+                        <!-- Nodos sobre la boca/cara -->
+                        <g class="node" id="node-30"><circle cx="185" cy="165" r="12"/><text x="185" y="165">2</text></g>
+                        <g class="node" id="node-31"><circle cx="215" cy="165" r="12"/><text x="215" y="165">2</text></g>
+
+                        <!-- Cola (4) -->
+                        <g class="node" id="node-32"><circle cx="200" cy="450" r="15"/><text x="200" y="450">3</text></g>
+                        <g class="node" id="node-33"><circle cx="200" cy="490" r="15"/><text x="200" y="490">3</text></g>
+                        <g class="node" id="node-34"><circle cx="200" cy="530" r="15"/><text x="200" y="530">3</text></g>
+                        <g class="node" id="node-35"><circle cx="200" cy="570" r="15"/><text x="200" y="570">3</text></g>
+                    </g>
+                </svg>
+
+                <div class="progress-info mt-4">
+                    <div class="progress-bar-container">
+                        <div id="mainProgressBar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p id="piecesCountLabel" style="font-weight:900; color:var(--gold);">CARRERA: 0 / 36 PIEZAS</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- BURBUJA DE CHAT FLOTANTE -->
+        <button id="chatBubble" class="chat-bubble" onclick="toggleChat()">
+            <span class="icon">💬</span>
+            <span id="chatBadge" class="badge-notify hidden">0</span>
+        </button>
+
+        <!-- VENTANA DE CHAT (OCULTA POR DEFECTO) -->
+        <aside id="chatSidebar" class="chat-sidebar glass-card hidden">
+            <div class="chat-header">
+                <span>🔊 CHAT DE MESA</span>
+                <button class="btn-close-chat" onclick="toggleChat()">✕</button>
+            </div>
+            <div id="chatMessages" class="chat-content">
+                <p class="system-msg">¡Bienvenidos a la carrera!</p>
+            </div>
+            <div class="chat-input-area">
+                <div class="quick-reactions">
+                    <button onclick="sendEmoji('🔥')">🔥</button>
+                    <button onclick="sendEmoji('🎉')">🎉</button>
+                    <button onclick="sendEmoji('😱')">😱</button>
+                    <button onclick="sendEmoji('🍀')">🍀</button>
+                </div>
+                <input type="text" id="chatInput" placeholder="Escribe algo..." onkeypress="if(event.key==='Enter') sendChatMessage()">
+            </div>
+        </aside>
+    </main>
+
+    <!-- FOOTER HUD -->
+    <footer class="game-hud-bottom">
+        <div id="playerRanking" class="player-chips-container">
+            <!-- Ranking de todos los jugadores -->
+        </div>
+    </footer>
+
+    <!-- MODAL DECISION -->
+    <div id="decisionModal" class="overlay hidden">
+        <div class="glass-card text-center p-5">
+            <h2 class="premium-title">¡MOMENTO DE DECIDIR!</h2>
+            <p>Has alcanzado el 50% de tu cucaracha.</p>
+            <div class="btn-grid-decision mt-4">
+                <button class="btn-primary success" onclick="confirmDecision('RECLAMAR')">💰 RECLAMAR PARTE</button>
+                <button class="btn-primary" onclick="confirmDecision('SEGUIR')">🚀 SEGUIR POR TODO</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AUDIO -->
+    <div class="audio-controls">
+        <button id="btnMute" onclick="toggleMute()">🔊</button>
+    </div>
+
+    <!-- AUDIOS DE LA PARTIDA -->
+    <audio id="soundBall" src="https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3" preload="auto"></audio>
+    <audio id="soundWin" src="https://assets.mixkit.co/active_storage/sfx/2012/2012-preview.mp3" preload="auto"></audio>
+    <audio id="soundApplause" src="https://assets.mixkit.co/active_storage/sfx/2630/2630-preview.mp3" preload="auto"></audio>
+    <audio id="soundReset" src="https://assets.mixkit.co/active_storage/sfx/1481/1481-preview.mp3" preload="auto"></audio>
+    <audio id="soundRoll" src="https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3" preload="auto"></audio>
+    <audio id="soundError" src="https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3" preload="auto"></audio>
+
+    <script src="cucaracha.js"></script>
+</body>
+</html>

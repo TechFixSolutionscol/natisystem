@@ -53,11 +53,13 @@
         const navUsuarios = document.getElementById('navUsuarios');
         const navConfig = document.getElementById('navConfig');
         const navBingo = document.getElementById('navBingo');
+        const navCucarachaAdmin = document.getElementById('navCucarachaAdmin');
         const isAdmin = userRole === 'admin' || userRole === 'ADMIN';
 
         if (navUsuarios) navUsuarios.style.display = isAdmin ? 'flex' : 'none';
         if (navConfig) navConfig.style.display = isAdmin ? 'flex' : 'none';
         if (navBingo) navBingo.style.display = isAdmin ? 'flex' : 'none';
+        if (navCucarachaAdmin) navCucarachaAdmin.style.display = isAdmin ? 'flex' : 'none';
 
         navLinks.forEach(link => {
             link.addEventListener('click', function (e) {
@@ -123,6 +125,35 @@
             case 'bingo-admin':
                 if (window.loadBingoAdminData) window.loadBingoAdminData();
                 break;
+            case 'cucaracha-juego':
+                syncCucarachaIframe();
+                break;
+            case 'cucaracha-admin':
+                const iframeAdmin = document.querySelector('#cucaracha-admin iframe');
+                if (iframeAdmin && !iframeAdmin.src.includes('admin.html')) {
+                    iframeAdmin.src = 'cucaracha/admin.html';
+                }
+                break;
+        }
+    }
+
+    /**
+     * Sincroniza los datos del usuario actual con el iframe de La Cucaracha
+     */
+    function syncCucarachaIframe() {
+        const iframe = document.getElementById('iframeCucarachaJuego');
+        if (!iframe) return;
+
+        const name = sessionStorage.getItem('natillera_name') || "";
+        const id = sessionStorage.getItem('natillera_id') || "";
+
+        // Si el iframe ya tiene la URL con params, no recargar forzosamente
+        // pero asegurar que sepa quién es el usuario
+        if (name) {
+            const currentSrc = iframe.src;
+            if (!currentSrc.includes('nombre=')) {
+                iframe.src = `cucaracha/index.html?nombre=${encodeURIComponent(name)}&cedula=${encodeURIComponent(id)}`;
+            }
         }
     }
 
@@ -141,6 +172,7 @@
             if (result.status === 'success') {
                 updateDashboard(result.data);
                 initGananciasChart(); // Cargar historial de ganancias
+                refreshCucarachaDashboard(); // Actualizar widgets de juegos
             } else {
                 console.error('Error al cargar dashboard:', result.message);
                 // Mostrar datos por defecto en caso de error
@@ -474,6 +506,40 @@
         }
     }
 
+    /**
+     * Obtiene el estado de La Cucaracha para mostrar en el Dashboard
+     */
+    async function refreshCucarachaDashboard() {
+        const card = document.getElementById('cucarachaDashboardCard');
+        const bolsaEl = document.getElementById('cucarachaDashboardBolsa');
+        const playersEl = document.getElementById('cucarachaDashboardPlayers');
+
+        if (!card) return;
+
+        try {
+            const response = await fetch(`${API_URL}?action=getPartidaActivaCucaracha`);
+            const result = await response.json();
+
+            if (result.status === 'success' && result.partida && result.partida.estado !== 'finalizada') {
+                const game = result.partida;
+                bolsaEl.textContent = formatCurrency(game.pozo_total || 0);
+
+                // Intentar obtener conteo de jugadores si está disponible, sino dejar el anterior o consultar
+                if (game.num_jugadores !== undefined) {
+                    playersEl.textContent = `${game.num_jugadores} Jugadores`;
+                } else {
+                    // Si el backend no envía el conteo, se puede omitir o hacer una segunda consulta
+                    playersEl.textContent = `Partida en curso`;
+                }
+                card.style.display = 'flex';
+            } else {
+                card.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error al refrescar dashboard de Cucaracha:', error);
+            card.style.display = 'none';
+        }
+    }
 
     // ==========================================
     // 4. GESTIÓN DE APORTES

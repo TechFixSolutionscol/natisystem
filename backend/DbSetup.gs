@@ -117,6 +117,12 @@ function inicializarBaseDatos() {
       ],
       'Bingo_Chat': [
         'id', 'juego_id', 'usuario_id', 'usuario_nombre', 'mensaje', 'rol', 'timestamp'
+      ],
+      'Cucaracha_Partidas': [
+        'id', 'fecha', 'nombre', 'monto', 'estado', 'pozo_total', 'ronda_actual', 'ganador', 'creado_por', 'dados_actuales', 'last_update'
+      ],
+      'Cucaracha_Jugadores': [
+        'partida_id', 'nombre', 'foto_url', 'estado', 'piezas_completadas', 'timestamp_registro', 'timestamp_aprobacion', 'socio_id', 'progreso_json'
       ]
     };
 

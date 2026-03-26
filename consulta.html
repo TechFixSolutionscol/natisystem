@@ -663,6 +663,11 @@
                         style="margin-left: 10px; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); border: none; color: white; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4); font-weight: bold;">
                         🎰 Ir al Bingo
                     </button>
+                    <!-- BOTÓN CUCARACHA (MIGRADO) -->
+                    <button onclick="irACucaracha()" class="btn btn-sm"
+                        style="margin-left: 10px; background: linear-gradient(135deg, #b45309 0%, #78350f 100%); border: none; color: white; box-shadow: 0 4px 15px rgba(180, 83, 9, 0.4); font-weight: bold;">
+                        🪳 Jugar Cucaracha
+                    </button>
                 </div>
 
             </div>
@@ -1441,10 +1446,8 @@
             document.getElementById('msgTitlePolla').textContent = title;
             document.getElementById('msgBodyPolla').textContent = body;
         }
-    </script>
 
-    <!-- Partículas de $ volando -->
-    <script>
+        // Partículas de $ volando
         (function () {
             const symbols = ['$', '$', '💵', '$', '$'];
             const count = 18;
@@ -1461,6 +1464,27 @@
             }
         })();
     </script>
+
+    <script>
+        /**
+         * Redirige al socio a La Cucaracha pasando sus datos de sesión
+         */
+        function irACucaracha() {
+            // Usar las mismas claves que el resto del sistema (Bingo, etc)
+            const nombre = sessionStorage.getItem('natillera_name');
+            const cedula = document.getElementById('socioCedula')?.textContent || sessionStorage.getItem('natillera_id');
+
+            if (!nombre || !cedula) {
+                alert('Sesión no encontrada. Por favor realiza una consulta primero.');
+                return;
+            }
+
+            // Pasar parámetros por URL para que el juego los tome automáticamente
+            const url = `cucaracha/index.html?nombre=${encodeURIComponent(nombre)}&cedula=${encodeURIComponent(cedula)}`;
+            window.open(url, '_blank');
+        }
+    </script>
 </body>
 
 </html>
+```

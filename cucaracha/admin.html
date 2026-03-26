@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - La Cucaracha</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="cucaracha.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        .admin-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .pending-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .receipt-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .btn-lanzar {
+            font-size: 2rem;
+            padding: 20px;
+            width: 100%;
+            margin-top: 20px;
+            background: var(--gold) !important;
+            color: #000 !important;
+        }
+
+        @media (max-width: 768px) {
+            .admin-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Animación de Dados */
+        .admin-die {
+            margin: 0 5px;
+        }
+
+        .die.rolling {
+            animation: die3DRoll 0.6s infinite linear;
+        }
+
+        @keyframes die3DRoll {
+            0% {
+                transform: rotateX(0) rotateY(0) scale(1.1);
+            }
+
+            25% {
+                transform: rotateX(90deg) rotateY(45deg) scale(1.2);
+            }
+
+            50% {
+                transform: rotateX(180deg) rotateY(90deg) scale(1.1);
+            }
+
+            75% {
+                transform: rotateX(270deg) rotateY(135deg) scale(1.2);
+            }
+
+            100% {
+                transform: rotateX(360deg) rotateY(180deg) scale(1.1);
+            }
+        }
+    </style>
+</head>
+
+<body class="dark-theme">
+
+    <div class="admin-container" style="padding: 2rem;">
+        <header class="section-header text-center mb-5">
+            <h1 class="premium-title">CONTROL DE LA CUCARACHA</h1>
+            <div id="activePartidaBadge" class="badge-gold">SIN SESIÓN</div>
+        </header>
+
+        <div class="admin-grid">
+            <!-- PANEL CREACIÓN / INFO -->
+            <section class="glass-card p-4">
+                <h2
+                    style="color:var(--gold); font-size:1.2rem; font-weight:800; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                    ⚙️ GESTIÓN DE PARTIDA</h2>
+                <div id="createPartidaForm" class="mt-4">
+                    <div class="form-group mb-3">
+                        <label class="text-muted" style="font-size:0.8rem;">Nombre de la Carrera</label>
+                        <input type="text" id="adminNombrePartida" class="input-premium"
+                            placeholder="Ej: Especial de Viernes"
+                            style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:white; padding:12px; border-radius:12px;">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="text-muted" style="font-size:0.8rem;">Monto de Entrada ($)</label>
+                        <input type="number" id="adminMonto" value="10000"
+                            style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:white; padding:12px; border-radius:12px;">
+                    </div>
+                    <button class="btn-primary mt-3" onclick="crearPartida()">CREAR NUEVA PARTIDA</button>
+                </div>
+
+                <div id="partidaActiveInfo" class="hidden mt-4">
+                    <div class="stat-badge w-full mb-3"
+                        style="display:flex; justify-content:space-between; flex-direction:row;">
+                        <span class="label">POZO ACUMULADO</span>
+                        <span id="adminPot" class="val">$0</span>
+                    </div>
+                    <div class="stat-badge w-full mb-3"
+                        style="display:flex; justify-content:space-between; flex-direction:row;">
+                        <span class="label">JUGADORES LISTOS</span>
+                        <span id="adminPlayersCount" class="val">0</span>
+                    </div>
+                    <button id="btnStartGame" class="btn-primary mt-4" style="background:var(--success) !important;"
+                        onclick="iniciarJuego()">🚀 INICIAR CARRERA</button>
+                    <button class="btn-secondary mt-2" onclick="migrarV2()" style="font-size:0.7rem; opacity:0.7;">⚙️
+                        REPARAR TABLAS V2</button>
+                    <button class="btn-primary mt-2" style="background:#ef4444 !important;"
+                        onclick="cancelarPartida()">✖ CANCELAR</button>
+                </div>
+            </section>
+
+            <!-- PANEL JUGADORES -->
+            <section class="glass-card p-4">
+                <h2
+                    style="color:var(--gold); font-size:1.2rem; font-weight:800; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                    👥 JUGADORES PENDIENTES</h2>
+                <div id="pendingPlayersList" class="mt-4" style="max-height: 200px; overflow-y: auto;">
+                    <!-- Lista de pendientes con foto -->
+                </div>
+
+                <h2 class="mt-5"
+                    style="color:var(--gold); font-size:1.2rem; font-weight:800; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                    🏃 EN PISTA</h2>
+                <div id="approvedPlayersList" class="player-chips-container mt-2">
+                    <!-- Lista de aprobados -->
+                </div>
+            </section>
+        </div>
+
+        <!-- PANEL DE JUEGO (DADOS V2) -->
+        <section id="gameControlPanel" class="glass-card mt-5 hidden" style="padding:40px; border-radius:30px;">
+            <h2 class="text-center" style="color:var(--gold); font-weight:900; letter-spacing:2px;">🎲 CONTROL DE RONDA
+            </h2>
+
+            <div id="phaseBadge" class="text-center mb-3">
+                <span id="adminPhaseLabel" class="badge-gold">FASE: ESPERA</span>
+            </div>
+
+            <div id="diceGrid" class="dice-grid mt-4 mb-4">
+                <!-- Inyección dinámica de dados 3D -->
+            </div>
+
+            <div class="admin-actions-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                <button id="btnRoll" class="btn-primary"
+                    style="font-size:1.2rem; padding:20px; background:var(--gold) !important; color:#000 !important;"
+                    onclick="lanzarDadosV2()">
+                    🎰 LANZAR DADOS
+                </button>
+                <button id="btnResolve" class="btn-primary"
+                    style="font-size:1.2rem; padding:20px; background:#22c55e !important;" onclick="resolverRonda()">
+                    ✅ RESOLVER DECISIONES
+                </button>
+            </div>
+
+            <p id="rollStatus" class="text-center mt-3 text-muted">Asegúrate de que todos hayan decidido antes de
+                Resolver</p>
+        </section>
+    </div>
+
+    <!-- MODAL FOTO RECIBO -->
+    <div id="photoModal" class="overlay hidden" onclick="this.classList.add('hidden')">
+        <img id="fullReceipt" src="" style="max-width: 90%; max-height: 90%; border-radius: 10px;">
+    </div>
+
+    <!-- MODAL DECISIÓN ADMIN (OBLIGATORIO FIN DE RONDA) -->
+    <div id="adminDecisionModal" class="overlay hidden">
+        <div class="glass-card text-center p-5 animate-zoom" style="max-width: 500px; border: 3px solid var(--gold); box-shadow: 0 0 50px var(--gold-glow);">
+            <h1 class="premium-title glow-text">🏆 ¡RONDA FINALIZADA!</h1>
+            <p class="mb-4 text-white">Se ha detectado un ganador. Selecciona el destino de los premios para continuar:</p>
+            
+            <div id="winnerInfoAdmin" class="winner-display" style="padding: 15px; margin-bottom: 20px;">
+                <span id="adminWinnerName" class="winner-name" style="font-size: 1.5rem;">NOMBRE DEL GANADOR</span>
+            </div>
+
+            <div class="decision-stack" style="display: flex; flex-direction: column; gap: 15px;">
+                <button class="btn-primary" style="background:#22c55e !important;" onclick="enviarDecisionAdmin('ENTREGAR_PREMIO')">
+                    💰 ENTREGAR PREMIO (REGISTRAR)
+                </button>
+                <button class="btn-primary" style="background:var(--primary) !important;" onclick="enviarDecisionAdmin('ENVIAR_FONDO')">
+                    🏦 ENVIAR AL FONDO NATILLERA
+                </button>
+                <div style="border-top: 1px dashed rgba(255,255,255,0.2); margin: 10px 0;"></div>
+                <button class="btn-primary" style="background:var(--gold) !important; color:black !important;" onclick="enviarDecisionAdmin('REINICIAR_PARTIDA')">
+                    🔄 INICIAR NUEVA RONDA (RESET)
+                </button>
+            </div>
+            <p class="text-muted mt-4" style="font-size: 0.7rem;">Esta acción es obligatoria para desbloquear la sala.</p>
+        </div>
+    </div>
+
+    <script>
+        function getScriptUrl() {
+            try { return window.parent.API_URL; } catch(e) { return null; }
+        }
+        const CONFIG = {
+            SCRIPT_URL: getScriptUrl() || 'https://script.google.com/macros/s/AKfycbw7SBiUzhJtmmNwMN5bblvfyGMewgwijWaJ9Z_fIwYhpkFU3oyLBQNcARah_PEQFuv3/exec',
+            WS_URL: 'wss://natillerasistem.onrender.com',
+            POLLING: 2000
+        };
+
+        let socket = null;
+
+        let state = {
+            partidaId: null,
+            players: [],
+            status: 'idle',
+            lastUpdate: 0,
+            isRolling: false
+        };
+
+        window.onload = () => {
+            fetchActiveGame();
+            setInterval(fetchActiveGame, CONFIG.POLLING);
+            initWebSocket();
+        };
+
+        async function fetchActiveGame() {
+            try {
+                const res = await fetch(`${CONFIG.SCRIPT_URL}?action=getPartidaActivaCucaracha`);
+                const data = await res.json();
+
+                if (data.status === 'success' && data.partida) {
+                    state.partidaId = data.partida.id;
+                    state.status = data.partida.estado;
+                    updateAdminUI(data.partida);
+                    fetchDetails();
+                } else {
+                    resetAdminUI();
+                }
+            } catch (e) {
+                console.error("Error fetching active game:", e);
+            }
+        }
+
+        async function fetchDetails() {
+            if (!state.partidaId) return;
+            const res = await fetch(`${CONFIG.SCRIPT_URL}?action=getEstadoPartidaCucaracha&partidaId=${state.partidaId}`);
+            const data = await res.json();
+            if (data.status === 'success') {
+                renderPlayers(data.jugadores);
+                updateDiceVisuals(data.partida.dados_actuales);
+            }
+        }
+
+        function updateAdminUI(partida) {
+            document.getElementById('createPartidaForm').classList.add('hidden');
+            document.getElementById('partidaActiveInfo').classList.remove('hidden');
+            document.getElementById('adminPot').innerText = formatCurrency(partida.pozo_total);
+            document.getElementById('activePartidaBadge').innerText = partida.estado.toUpperCase();
+
+            const btnStart = document.getElementById('btnStartGame');
+            const gameControl = document.getElementById('gameControlPanel');
+            const decisionModal = document.getElementById('adminDecisionModal');
+
+            if (partida.estado === 'esperando') {
+                btnStart.classList.remove('hidden');
+                gameControl.classList.add('hidden');
+                decisionModal.classList.add('hidden');
+            } else if (partida.estado === 'FIN_RONDA') {
+                btnStart.classList.add('hidden');
+                // No ocultar gameControl pero mostrar MODAL prioritario
+                decisionModal.classList.remove('hidden');
+                document.getElementById('adminWinnerName').innerText = partida.ganador || 'GANADOR DESCONOCIDO';
+                
+                // Efecto confeti solo una vez
+                if (!state.adminCelebrated) {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    state.adminCelebrated = true;
+                }
+            } else {
+                btnStart.classList.add('hidden');
+                gameControl.classList.remove('hidden');
+                decisionModal.classList.add('hidden');
+                state.adminCelebrated = false; // Reset para próxima vez
+            }
+        }
+
+        async function enviarDecisionAdmin(decision) {
+            if (!confirm(`¿Estás seguro de elegir: ${decision}?`)) return;
+            
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "⌛ PROCESANDO...";
+
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ 
+                        action: 'tomarDecisionAdminCucaracha', 
+                        partidaId: state.partidaId,
+                        decision: decision 
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    // DESCARGA DE PDF SI EXISTE
+                    if (data.pdf && data.pdf.base64) {
+                        const link = document.createElement('a');
+                        link.href = `data:application/pdf;base64,${data.pdf.base64}`;
+                        link.download = data.pdf.filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+                    
+                    document.getElementById('adminDecisionModal').classList.add('hidden');
+                    fetchActiveGame();
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (e) { console.error(e); }
+            
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+
+        async function crearPartida() {
+            const nombre = document.getElementById('adminNombrePartida').value;
+            const monto = document.getElementById('adminMonto').value;
+
+            const res = await fetch(CONFIG.SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'crearPartidaCucaracha', nombre, monto, adminNombre: 'Admin' })
+            });
+            const data = await res.json();
+            if (data.status === 'success') fetchActiveGame();
+        }
+
+        async function iniciarJuego() {
+            await fetch(CONFIG.SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'iniciarPartidaCucaracha', partidaId: state.partidaId })
+            });
+            fetchActiveGame();
+        }
+
+        function createDice3D(container, index, side = 1) {
+            const diceHtml = `
+                <div class="dice-container-3d" id="dice-container-${index}">
+                    <div class="dice-cube show-${side}">
+                        <div class="die-side side-1"><div class="dot"></div></div>
+                        <div class="die-side side-2"><div class="dot"></div><div class="dot"></div></div>
+                        <div class="die-side side-3"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="die-side side-4"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="die-side side-5"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="die-side side-6"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', diceHtml);
+        }
+
+        async function lanzarDadosV2() {
+            if (!state.partidaId) return;
+            state.isRolling = true;
+            const btn = document.getElementById('btnRoll');
+            btn.disabled = true;
+            btn.innerText = "🎲 LANZANDO...";
+            
+            const grid = document.getElementById('diceGrid');
+            grid.innerHTML = '';
+            for (let i = 0; i < 10; i++) {
+                createDice3D(grid, i, 1);
+                grid.querySelector(`#dice-container-${i} .dice-cube`).classList.add('rolling');
+            }
+
+            const res = await fetch(CONFIG.SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'lanzarDadosCucarachaV2', partidaId: state.partidaId })
+            });
+            const data = await res.json();
+            
+            await new Promise(r => setTimeout(r, 1000));
+
+            btn.disabled = false;
+            btn.innerText = "🎰 LANZAR DADOS";
+
+            if (socket && socket.readyState === 1 && state.partidaId) {
+                socket.send(JSON.stringify({ type: 'cucaracha-dice', room: `cucaracha_${state.partidaId}` }));
+            }
+
+            if (data.status === 'success' && data.dados) {
+                for (let i = 0; i < 10; i++) {
+                    const cube = grid.querySelector(`#dice-container-${i} .dice-cube`);
+                    if (cube) {
+                        cube.classList.remove('rolling');
+                        for (let s = 1; s <= 6; s++) cube.classList.remove(`show-${s}`);
+                        cube.classList.add(`show-${data.dados[i] || 1}`);
+                    }
+                }
+            }
+            state.isRolling = false;
+            fetchDetails();
+        }
+
+        async function resolverRonda() {
+            const btn = document.getElementById('btnResolve');
+            btn.disabled = true;
+            btn.innerText = "⌛ RESOLVIENDO...";
+
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action: 'procesarRondaMasiva', partidaId: state.partidaId })
+                });
+                const data = await res.json();
+                alert(data.status === 'success' ? "Ronda procesada con éxito" : "Error: " + data.message);
+            } catch (e) { console.error(e); }
+
+            btn.disabled = false;
+            btn.innerText = "✅ RESOLVER DECISIONES";
+            fetchDetails();
+        }
+
+        async function migrarV2() {
+            if (!confirm('Esto añadirá las columnas necesarias para el motor V2. ¿Continuar?')) return;
+            const res = await fetch(CONFIG.SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'setupCucarachaV2' })
+            });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        async function cancelarPartida() {
+            if (!confirm('¿Realmente deseas cancelar esta partida?')) return;
+            const res = await fetch(CONFIG.SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'cancelarPartidaCucaracha', partidaId: state.partidaId })
+            });
+            const data = await res.json();
+            if (data.status === 'success') fetchActiveGame();
+        }
+
+        async function aprobarJugador(nombre, btnElement) {
+            // UI OPTIMISTA: Ocultar inmediatamente la tarjeta del jugador
+            const card = btnElement.closest('.pending-card');
+            if (card) {
+                card.style.opacity = '0.3';
+                card.style.pointerEvents = 'none';
+                // Opcional: ocultarla del todo tras un breve lag visual
+                setTimeout(() => card.classList.add('hidden'), 300);
+            }
+
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action: 'aprobarJugadorCucaracha', partidaId: state.partidaId, nombre })
+                });
+                const data = await res.json();
+                if (data.status !== 'success') {
+                    alert("Error al aprobar: " + data.message);
+                    if (card) card.classList.remove('hidden'); // Restaurar si falló
+                }
+            } catch (e) { 
+                console.error(e); 
+                if (card) card.classList.remove('hidden');
+            }
+            
+            // Refrescar para ver al jugador en la pista
+            fetchDetails();
+        }
+
+        function renderPlayers(jugadores) {
+            const pending = jugadores.filter(j => j.estado === 'pendiente');
+            const approved = jugadores.filter(j => j.estado !== 'pendiente');
+
+            document.getElementById('adminPlayersCount').innerText = approved.length;
+
+            const pendingList = document.getElementById('pendingPlayersList');
+            pendingList.innerHTML = pending.map(j => `
+                <div class="pending-card">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="position:relative;">
+                            <img src="${j.foto_url}" class="receipt-thumb" onclick="openPhoto('${j.foto_url}')" onerror="this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20width=%2250%22%20height=%2250%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Crect%20width=%22100%25%22%20height=%22100%25%22%20fill=%22%23334155%22/%3E%3Ctext%20x=%2250%25%22%20y=%2250%25%22%20font-family=%22Arial%22%20font-size=%2210%22%20fill=%22%2394a3b8%22%20text-anchor=%22middle%22%20dy=%22.3em%22%3ERECIBO%3C/text%3E%3C/svg%3E'">
+                            <div style="font-size:10px; color:var(--gold); margin-top:4px; text-align:center;">🔍 Ver</div>
+                        </div>
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-weight:bold; color:white;">${j.nombre}</span>
+                            <span style="font-size:0.8rem; color:var(--gold); opacity:0.8;">ID/Cédula: ${j.socio_id || 'N/A'}</span>
+                        </div>
+                    </div>
+                    <button class="btn-primary" style="padding:8px 15px; font-size:0.8rem;" onclick="aprobarJugador('${j.nombre}', this)">APROBAR</button>
+                </div>
+            `).join('') || '<p class="text-muted text-center p-4">No hay jugadores pendientes</p>';
+
+            const approvedList = document.getElementById('approvedPlayersList');
+            approvedList.innerHTML = approved.map(j => `
+                <div class="player-chip">
+                    <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                        <span style="font-size:0.9rem; font-weight:900;">${j.nombre}</span>
+                        <span style="font-size:0.7rem; color:var(--gold);">${j.decision_actual ? '✍️ ' + j.decision_actual : '⏳ Esperando...'}</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:8px; font-weight:900;">
+                        ${j.piezas_completadas}/36
+                    </div>
+                </div>
+            `).join('');
+
+        }
+
+
+        function updateDiceVisuals(dadosJson) {
+            if (!dadosJson || state.isRolling) return;
+            const dados = typeof dadosJson === 'string' ? JSON.parse(dadosJson) : dadosJson;
+            if (!dados || dados.length === 0) return;
+
+            const grid = document.getElementById('diceGrid');
+            if (!grid) return;
+
+            // Si no hay dados inyectados, los creamos
+            if (grid.children.length === 0) {
+                for (let i = 0; i < 10; i++) {
+                    createDice3D(grid, i, dados[i] || 1);
+                }
+            } else {
+                // Si ya existen, solo actualizamos su cara (sin animar si no es un lanzamiento nuevo)
+                for (let i = 0; i < 10; i++) {
+                    const cube = grid.querySelector(`#dice-container-${i} .dice-cube`);
+                    if (cube) {
+                        for (let s = 1; s <= 6; s++) cube.classList.remove(`show-${s}`);
+                        cube.classList.add(`show-${dados[i] || 1}`);
+                    }
+                }
+            }
+        }
+
+        function openPhoto(url) {
+            document.getElementById('fullReceipt').src = url;
+            document.getElementById('photoModal').classList.remove('hidden');
+        }
+
+        function formatCurrency(val) {
+            return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
+        }
+
+        function resetAdminUI() {
+            document.getElementById('createPartidaForm').classList.remove('hidden');
+            document.getElementById('partidaActiveInfo').classList.add('hidden');
+            document.getElementById('gameControlPanel').classList.add('hidden');
+            document.getElementById('activePartidaBadge').innerText = "SIN SESION";
+        }
+
+        function initWebSocket() {
+            if (socket) return;
+            socket = new WebSocket(CONFIG.WS_URL);
+            socket.onopen = () => {
+                console.log("🔌 Admin Conectado a WebSocket Relay");
+                if (state.partidaId) {
+                    socket.send(JSON.stringify({
+                        type: 'join',
+                        room: `cucaracha_${state.partidaId}`,
+                        identity: 'admin'
+                    }));
+                }
+            };
+            socket.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'cucaracha-mark') {
+                    // Quizás mostrar algo sutil o actualizar lista
+                    fetchDetails();
+                }
+            };
+            socket.onclose = () => {
+                socket = null;
+                setTimeout(initWebSocket, 5000);
+            };
+        }
+    </script>
+</body>
+
+</html>
