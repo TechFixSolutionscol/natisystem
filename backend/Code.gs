@@ -1480,52 +1480,37 @@ function calcularDistribucionGanancias() {
         }
     }
 
-    // 2. Calcular Totales (Intereses + Actividades)
-    // Intereses (Caja)
-    const sheetMovimientos = ss.getSheetByName('Movimientos_Prestamos');
+    // 2. Calcular Totales (Intereses Pagados + Otras Actividades)
+    // Ahora todo sale de Actividades según el requerimiento del usuario
+    const respAct = getData(HOJAS.ACTIVIDADES);
     let totalIntereses = 0;
-    if (sheetMovimientos && sheetMovimientos.getLastRow() > 1) {
-        const dataMovimientos = sheetMovimientos.getDataRange().getValues();
-        for(let i = 1; i < dataMovimientos.length; i++) {
-            if (String(dataMovimientos[i][3]).trim().toUpperCase() === 'PAGO_INTERES') {
-                totalIntereses += Number(dataMovimientos[i][4]) || 0;
-            }
-        }
-    }
-
-    // Actividades (Solo FINALIZADAS)
-    const actividades = getData(HOJAS.ACTIVIDADES);
     let totalActividades = 0;
-    if (actividades.status === 'success' && actividades.data) {
-      totalActividades = actividades.data.reduce((sum, a) => {
-        const estado = String(a.estado || '').trim().toUpperCase();
-        return estado === 'FINALIZADA' ? sum + Number(a.monto_generado || 0) : sum;
-      }, 0);
+    
+    if (respAct.status === 'success' && respAct.data) {
+        respAct.data.forEach(a => {
+            const monto = Number(a.monto_generado) || 0;
+            const nombre = String(a.nombre_actividad || '').trim();
+            
+            if (nombre === 'Pago Intereses Préstamo') {
+                totalIntereses += monto;
+            } else {
+                totalActividades += monto;
+            }
+        });
     }
     
     const gananciaTotal = totalIntereses + totalActividades;
     
     // 3. Obtener Participantes Activos
     const sheetParticipantes = ss.getSheetByName(HOJAS.PARTICIPANTES);
+    if (!sheetParticipantes) return { status: 'error', message: 'No se encontró la hoja de Participantes' };
+    
     const dataParticipantes = sheetParticipantes.getDataRange().getValues();
     const headersP = dataParticipantes[0];
     const idxTotalAportado = headersP.indexOf('total_aportado');
-    const idxPorcentaje = headersP.indexOf('porcentaje_participacion'); // Puede ser -1 si no se ha recargado, pero actualizarEsquema ya corrió
+    const idxPorcentaje = headersP.indexOf('porcentaje_participacion');
     
-    // Mapear participantes relevantes
-    // Estructura: [ID, Nombre, ..., TotalAportado, ..., Porcentaje]
-    let participantesActivos = [];
-    let totalAportadoGlobal = 0;
-    let sumaPorcentajesManuales = 0;
-
-    for (let i = 1; i < dataParticipantes.length; i++) {
-        const row = dataParticipantes[i];
-        // Asumimos col 5 es activo (ajustar según esquema real si varía, pero row[5] suele ser activo en standard)
-        // Mejor usar el objeto getData para ser seguro, pero aquí necesitamos escribir también.
-        // Vamos a usar la lógica de índices relativos es arriesgado. Usaremos getData para lectura robusta y mapeo de IDs.
-    }
-    
-    // RE-LECTURA ROBUSTA USANDO getData
+    // RE-LECTURA ROBUSTA USANDO getData para mapeo de objetos
     const respP = getData(HOJAS.PARTICIPANTES);
     if (respP.status !== 'success') return respP;
     
@@ -1535,35 +1520,22 @@ function calcularDistribucionGanancias() {
         return { status: 'success', message: 'No hay participantes activos' };
     }
 
+    let totalAportadoGlobal = 0;
+    let sumaPorcentajesManuales = 0;
+
     // Calcular bases según método
     if (metodoDistribucion === 'PROPORCIONAL') {
         totalAportadoGlobal = listaParticipantes.reduce((sum, p) => sum + (Number(p.total_aportado) || 0), 0);
     } else if (metodoDistribucion === 'MANUAL') {
         sumaPorcentajesManuales = listaParticipantes.reduce((sum, p) => sum + (Number(p.porcentaje_participacion) || 0), 0);
-        // Validación estricta
         if (Math.abs(sumaPorcentajesManuales - 100) > 0.1) {
-            // Fallback por seguridad o Error
-            // Decisión: Error para obligar a corregir
              return { status: 'error', message: `Los porcentajes manuales suman ${sumaPorcentajesManuales}%, deben sumar 100%` };
         }
     }
 
-    // 4. Preparar Distribución
-    const sheetGanancias = ss.getSheetByName(HOJAS.GANANCIAS);
-    
-    // LIMPIEZA
-    const rowsG = sheetGanancias.getDataRange().getValues();
-    if (rowsG.length > 0) {
-        const header = rowsG[0];
-        sheetGanancias.clearContents();
-        sheetGanancias.clearFormats();
-        sheetGanancias.getRange(1, 1, 1, header.length).setValues([header]);
-    }
-
-    const fechaDist = new Date();
     const mapGanancias = {}; // pId -> Monto
 
-    // 5. Calcular y Registrar
+    // 5. Calcular para cada participante
     listaParticipantes.forEach(p => {
         let montoGanancia = 0;
         
@@ -1581,31 +1553,15 @@ function calcularDistribucionGanancias() {
         
         montoGanancia = Number(montoGanancia.toFixed(2));
         mapGanancias[p.id] = montoGanancia;
-
-        // Escribir en Historial
-        sheetGanancias.appendRow([
-            generateId(),
-            p.id,
-            'DIST-' + generateId().split('-')[1],
-            montoGanancia,
-            fechaDist,
-            `DISTRIBUCION (${metodoDistribucion})`,
-            new Date()
-        ]);
     });
 
     // 6. Actualizar Participantes (Columna Ganancias)
-    // Necesitamos el índice de la columna 'ganancias_acumuladas'
-    // Como getData devuelve objetos, usamos headersP para buscar el índice FÍSICO
     const idxGanancias = headersP.indexOf('ganancias_acumuladas'); 
     
     if (idxGanancias !== -1) {
-        // Optimización: Escribir en bloque sería mejor, pero por seguridad iteraremos
-        // Usamos el array dataParticipantes original para coincidir filas
         for (let i = 1; i < dataParticipantes.length; i++) {
              const idOriginal = String(dataParticipantes[i][0]);
              const ganancia = mapGanancias[idOriginal] || 0;
-             // +1 porque row son 0-based pero sheet es 1-based. idx es 0-based.
              sheetParticipantes.getRange(i + 1, idxGanancias + 1).setValue(ganancia);
         }
     }
@@ -1710,6 +1666,30 @@ function registrarAbono(data) {
                     // Dejemos saldo_resultante_capital como referencia
                     prestamo.saldo_pendiente - pagoInteres // Temporal logic
                 ]);
+
+                // NUEVA LOGICA: Registrar en Actividades como indica el usuario
+                try {
+                    const sheetActividades = ss.getSheetByName(HOJAS.ACTIVIDADES);
+                    if (sheetActividades) {
+                        // Obtener participante
+                        const pId = dataPrestamos[rowPrestamo-1][1];
+                        const participante = findParticipante(pId);
+                        const nombreP = participante ? participante.nombre : 'Desconocido';
+
+                        sheetActividades.appendRow([
+                            generateId(),
+                            'Pago Intereses Préstamo',
+                            pagoInteres,
+                            new Date(),
+                            'Sistema',
+                            `intereses prestamo pagado de ${nombreP}`,
+                            'FINALIZADA',
+                            new Date()
+                        ]);
+                    }
+                } catch (errAct) {
+                    console.error('Error registrando en actividades:', errAct.message);
+                }
             }
 
             if (pagoCapital > 0) {
@@ -1733,10 +1713,8 @@ function registrarAbono(data) {
             // Validar si queda en 0 para cambio de estado visual (aunque cierre es manual)
             // El usuario dijo "El préstamo queda pendiente de acción humana". No cambiamos a PAGADO autom.
             
-            // Recalcular ganancias si hubo pago de interés
-            if (pagoInteres > 0) {
-                calcularDistribucionGanancias();
-            }
+            // Recalcular ganancias si hubo pago de interés o cualquier movimiento que afecte
+            calcularDistribucionGanancias();
 
             return { 
                 status: 'success', 
@@ -2279,35 +2257,38 @@ function getResumen() {
       );
     }
     
-    // 2. Calcular total recaudado en Actividades
+    // 2. Calcular totales desde Actividades (Base Caja)
     let totalActividades = 0;
+    let totalInteresesPagados = 0;
+    
     if (actividades.status === 'success' && actividades.data) {
-        totalActividades = actividades.data.reduce((sum, a) => 
-            sum + Number(a.monto_generado || 0), 0
-        );
+        actividades.data.forEach(a => {
+            const monto = Number(a.monto_generado) || 0;
+            const nombre = String(a.nombre_actividad || '').trim();
+            
+            if (nombre === 'Pago Intereses Préstamo') {
+                totalInteresesPagados += monto;
+            } else {
+                totalActividades += monto;
+            }
+        });
     }
     
-    // 3. Calcular Préstamos y sus Intereses
+    // 3. Calcular Capital Prestado (Lo que está en la calle)
     let capitalPrestado = 0;
-    let interesesPagados = 0;
-    
     if (prestamos.status === 'success' && prestamos.data) {
       prestamos.data.forEach(p => {
         const estado = String(p.estado || '').trim().toUpperCase();
-        if (estado === 'PAGADO') {
-          interesesPagados += Number(p.interes_generado || 0);
-        } else {
-          // Si no está pagado, el capital sigue "en la calle"
+        if (estado !== 'PAGADO') {
           capitalPrestado += Number(p.monto_prestado || 0);
         }
       });
     }
 
-    // 4. Totales Finales
-    // Total Ganancias = Actividades + Intereses Cobrados
-    const totalGanancias = totalActividades + interesesPagados;
+    // 4. Totales Finales (Base Caja)
+    const totalGanancias = totalActividades + totalInteresesPagados;
     
-    // Dinero Disponible = (Aportado + Ganancias) - Lo que está prestado
+    // Dinero Disponible = (Aportado + Ganancias Cobradas) - Lo que está prestado (capital)
     const dineroDisponible = (totalAportado + totalGanancias) - capitalPrestado;
     
     // 5. Contar participantes activos
@@ -2340,8 +2321,8 @@ function getResumen() {
         capitalPrestado,
         dineroDisponible,
         totalActividades,
-        interesesPagados,
-        totalIntereses: interesesPagados, // Alias para compatibilidad
+        interesesGenerados: totalInteresesPagados,
+        totalIntereses: totalInteresesPagados, // Alias para compatibilidad
         numParticipantes,
         cicloActual: cicloData.nombre,
         fechaInicio: cicloData.fecha_inicio,

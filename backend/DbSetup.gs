@@ -84,10 +84,6 @@ function inicializarBaseDatos() {
         // Legacy: se mantiene por compatibilidad con registros históricos
         'id', 'prestamo_id', 'monto_interes', 'fecha_pago', 'estado', 'created_at'
       ],
-      'Ganancias_Distribuidas': [
-        'id', 'participante_id', 'actividad_id', 'monto_ganancia',
-        'fecha_distribucion', 'tipo', 'created_at'
-      ],
       'Ciclos': [
         'id', 'nombre', 'fecha_inicio', 'fecha_cierre', 'total_recaudado',
         'total_ganancias', 'total_intereses', 'estado', 'created_at'

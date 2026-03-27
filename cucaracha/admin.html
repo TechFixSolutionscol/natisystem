@@ -129,9 +129,14 @@
 
             <!-- PANEL JUGADORES -->
             <section class="glass-card p-4">
-                <h2
-                    style="color:var(--gold); font-size:1.2rem; font-weight:800; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-                    👥 JUGADORES PENDIENTES</h2>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2 style="color:var(--gold); font-size:1.2rem; font-weight:800; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; flex-grow:1;">
+                        👥 JUGADORES PENDIENTES</h2>
+                    <!-- Reloj secundario en sección de aprobación -->
+                    <div id="adminTimerPlayers" class="hidden" style="margin-left:15px; transform:scale(0.7); transform-origin:right center;">
+                        <div id="neonClockPlayers" class="neon-clock green">00:20</div>
+                    </div>
+                </div>
                 <div id="pendingPlayersList" class="mt-4" style="max-height: 200px; overflow-y: auto;">
                     <!-- Lista de pendientes con foto -->
                 </div>
@@ -160,7 +165,7 @@
 
             <!-- RELOJ DIGITAL NEÓN (Sincronizado) -->
             <div id="adminTimerContainer" class="neon-timer-container hidden" style="justify-content:center; margin-bottom:20px;">
-                <div id="neonClock" class="neon-clock">00:20</div>
+                <div id="neonClock" class="neon-clock green">00:20</div>
             </div>
 
             <div class="admin-actions-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
@@ -330,19 +335,22 @@
             }
 
             state.decisionTimeLeft = forcedTime;
-            const container = document.getElementById('adminTimerContainer');
-            const clock = document.getElementById('neonClock');
+            const containers = [document.getElementById('adminTimerContainer'), document.getElementById('adminTimerPlayers')];
+            const clocks = [document.getElementById('neonClock'), document.getElementById('neonClockPlayers')];
 
-            if (container) container.classList.remove('hidden');
+            containers.forEach(c => c && c.classList.remove('hidden'));
             
             state.decisionTimer = setInterval(() => {
                 state.decisionTimeLeft--;
-                if (clock) {
-                    const ss = Math.max(0, state.decisionTimeLeft).toString().padStart(2, '0');
-                    clock.textContent = `00:${ss}`;
-                    if (state.decisionTimeLeft <= 5) clock.classList.add('low-time');
-                    else clock.classList.remove('low-time');
-                }
+                const ss = Math.max(0, state.decisionTimeLeft).toString().padStart(2, '0');
+                
+                clocks.forEach(clock => {
+                    if (clock) {
+                        clock.textContent = `00:${ss}`;
+                        if (state.decisionTimeLeft <= 5) clock.classList.add('low-time');
+                        else clock.classList.remove('low-time');
+                    }
+                });
 
                 if (state.decisionTimeLeft <= 0) {
                     stopAdminTimer();
@@ -355,13 +363,16 @@
                 clearInterval(state.decisionTimer);
                 state.decisionTimer = null;
             }
-            const container = document.getElementById('adminTimerContainer');
-            const clock = document.getElementById('neonClock');
-            if (container) container.classList.add('hidden');
-            if (clock) {
-                clock.textContent = "00:20";
-                clock.classList.remove('low-time');
-            }
+            const containers = [document.getElementById('adminTimerContainer'), document.getElementById('adminTimerPlayers')];
+            const clocks = [document.getElementById('neonClock'), document.getElementById('neonClockPlayers')];
+            
+            containers.forEach(c => c && c.classList.add('hidden'));
+            clocks.forEach(clock => {
+                if (clock) {
+                    clock.textContent = "00:20";
+                    clock.classList.remove('low-time');
+                }
+            });
         }
 
         async function enviarDecisionAdmin(decision) {
